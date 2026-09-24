@@ -6,8 +6,8 @@ import 'package:geolocator/geolocator.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
-import 'package:fishing_voyage_manag_sys/services/api_service.dart';
-import 'package:fishing_voyage_manag_sys/services/location_service.dart';
+import 'package:fishing_voyage_manag_sys/services/api_services/api_service.dart';
+import 'package:fishing_voyage_manag_sys/services/background_Services/location_service.dart';
 import 'package:fishing_voyage_manag_sys/database/database_helper.dart';
 
 class EndTripScreen extends StatefulWidget {
@@ -517,7 +517,7 @@ class _EndTripScreenState extends State<EndTripScreen> {
         if (isOffline) {
           await _db.updateVoyageSyncStatus(widget.intimationId, 0);
         }
-        
+
         await _db.updateVoyageStatus(widget.intimationId, 'completed');
 
         // Stop tracking
@@ -532,7 +532,7 @@ class _EndTripScreenState extends State<EndTripScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(isOffline ? '✅ Trip ended locally! (Will sync when online)' : '✅ Trip ended successfully!'), 
+              content: Text(isOffline ? '✅ Trip ended locally! (Will sync when online)' : '✅ Trip ended successfully!'),
               backgroundColor: isOffline ? Colors.orange : Colors.green
             ),
           );

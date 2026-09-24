@@ -1,9 +1,10 @@
-import 'dart:io';
+// lib/screens/boat_owner/boat_owner_details_screen.dart
+
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:fishing_voyage_manag_sys/database/database_helper.dart';
-import 'package:fishing_voyage_manag_sys/services/api_service.dart';
-import 'package:fishing_voyage_manag_sys/screens/boat_owner/boat_selection_screen.dart';
+
+import '../../database/database_helper.dart';
+import '../../services/api_services/api_service.dart';
+import 'boat_selection_screen.dart';
 
 class BoatOwnerDetailsScreen extends StatefulWidget {
   const BoatOwnerDetailsScreen({super.key});
@@ -26,49 +27,11 @@ class _BoatOwnerDetailsScreenState extends State<BoatOwnerDetailsScreen> {
   bool isLoading = false;
   bool isLoadingPorts = false;
 
-  // NEW: avatar preview path (UI only — not wired to backend)
-  File? _avatarFile;
-
   List<Map<String, dynamic>> ports = [];
   List<Map<String, dynamic>> filteredPorts = [];
 
   final ApiService _apiService = ApiService();
   final DatabaseHelper _db = DatabaseHelper();
-
-  // ─── MARITIME PALETTE (matches new HTML UI) ─────────────
-  static const Color ocean900 = Color(0xFF0F2757);
-  static const Color ocean800 = Color(0xFF1E3A8A);
-  static const Color ocean700 = Color(0xFF1E40AF);
-  static const Color ocean600 = Color(0xFF1D4ED8);
-  static const Color ocean500 = Color(0xFF2563EB);
-  static const Color ocean300 = Color(0xFF93C5FD);
-  static const Color ocean200 = Color(0xFFBFDBFE);
-  static const Color ocean100 = Color(0xFFE0EFFE);
-  static const Color ocean50  = Color(0xFFF0F7FF);
-
-  static const Color slate900 = Color(0xFF0F172A);
-  static const Color slate800 = Color(0xFF1E293B);
-  static const Color slate700 = Color(0xFF334155);
-  static const Color slate600 = Color(0xFF475569);
-  static const Color slate500 = Color(0xFF64748B);
-  static const Color slate400 = Color(0xFF94A3B8);
-  static const Color slate300 = Color(0xFFCBD5E1);
-  static const Color slate200 = Color(0xFFE2E8F0);
-  static const Color slate100 = Color(0xFFF1F5F9);
-  static const Color slate50  = Color(0xFFF8FAFC);
-
-  static const Color emerald500 = Color(0xFF10B981);
-  static const Color emerald600 = Color(0xFF059669);
-  static const Color emerald50  = Color(0xFFECFDF5);
-  static const Color emerald200 = Color(0xFFA7F3D0);
-  static const Color cyan400    = Color(0xFF22D3EE);
-  static const Color cyan300    = Color(0xFF67E8F9);
-
-  // Legacy aliases kept for any remaining references
-  static const Color primaryBlue = ocean500;
-  static const Color darkBlue    = ocean900;
-  static const Color lightBlue   = ocean100;
-  static const Color borderColor = slate200;
 
   @override
   void initState() {
@@ -95,16 +58,18 @@ class _BoatOwnerDetailsScreenState extends State<BoatOwnerDetailsScreen> {
   Future<void> _loadMobileNumber() async {
     final session = await _db.getUserSession();
     if (session != null && session['mobile_no'] != null) {
-      setState(() {
-        mobileController.text = session['mobile_no'];
-      });
+      mobileController.text = session['mobile_no'];
     }
   }
 
   Future<void> _loadPorts() async {
-    setState(() => isLoadingPorts = true);
+    setState(() {
+      isLoadingPorts = true;
+    });
+
     try {
       final response = await _apiService.getPorts();
+
       if (response['success'] == true) {
         final items = response['data']['items'] as List?;
         if (items != null && items.isNotEmpty) {
@@ -134,7 +99,11 @@ class _BoatOwnerDetailsScreenState extends State<BoatOwnerDetailsScreen> {
       });
       _showError('Network error: ${e.toString()}');
     } finally {
-      if (mounted) setState(() => isLoadingPorts = false);
+      if (mounted) {
+        setState(() {
+          isLoadingPorts = false;
+        });
+      }
     }
   }
 
@@ -156,187 +125,199 @@ class _BoatOwnerDetailsScreenState extends State<BoatOwnerDetailsScreen> {
     });
   }
 
-  // ══════════════════════════════════════════════════════════════
-  //  BUILD
-  // ══════════════════════════════════════════════════════════════
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: slate100,
-      body: Stack(
-        children: [
-          // Maritime mesh background
-          Positioned.fill(
-            child: Container(
-              decoration: const BoxDecoration(
-                color: slate50,
-                gradient: RadialGradient(
-                  center: Alignment(-0.8, -0.9),
-                  radius: 1.6,
-                  colors: [Color(0x55E0EFFE), Colors.transparent],
+      backgroundColor: Colors.grey[50],
+      body: SafeArea(
+        child: Column(
+          children: [
+            _buildHeader(),
+            Expanded(
+              child: SingleChildScrollView(
+                physics: const BouncingScrollPhysics(),
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildTitleSection(),
+                    const SizedBox(height: 20),
+                    _buildPhotoUpload(),
+                    const SizedBox(height: 20),
+                    _buildFormFields(),
+                    const SizedBox(height: 16),
+                    if (selectedHomePortId != null) _buildSelectedPortInfo(),
+                    const SizedBox(height: 24),
+                    _buildSaveButton(),
+                    const SizedBox(height: 20),
+                  ],
                 ),
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // SELECTED PORT INFO
+  // ===========================================================================
+
+  Widget _buildSelectedPortInfo() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.blue[50],
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: Colors.blue[200]!,
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: Colors.blue[100],
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Icon(
+              Icons.check_circle,
+              color: Colors.blue[700],
+              size: 18,
+            ),
           ),
-          SafeArea(
+          const SizedBox(width: 10),
+          Expanded(
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildHeader(),
-                Expanded(
-                  child: SingleChildScrollView(
-                    physics: const BouncingScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(18, 20, 18, 24),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildTitleSection(),
-                        const SizedBox(height: 22),
-                        _buildPhotoUpload(),
-                        const SizedBox(height: 24),
-                        _buildFormFields(),
-                        const SizedBox(height: 16),
-                        if (selectedHomePortId != null)
-                          _buildSelectedPortInfo(),
-                        const SizedBox(height: 24),
-                        _buildSaveButton(),
-                        const SizedBox(height: 12),
-                        const Center(
-                          child: Text(
-                            'Department of Fisheries',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
-                              color: slate400,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-                      ],
-                    ),
+                Text(
+                  'Selected Port',
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: Colors.blue[700],
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.5,
                   ),
                 ),
+                const SizedBox(height: 2),
+                Text(
+                  selectedHomePortName ?? '',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF07347F),
+                  ),
+                ),
+                if (selectedHomePortDistrict != null ||
+                    selectedHomePortCode != null) ...[
+                  const SizedBox(height: 2),
+                  Row(
+                    children: [
+                      if (selectedHomePortDistrict != null) ...[
+                        Text(
+                          selectedHomePortDistrict!,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      ],
+                      if (selectedHomePortDistrict != null &&
+                          selectedHomePortCode != null) ...[
+                        const SizedBox(width: 4),
+                        Text(
+                          '•',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey[400],
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                      ],
+                      if (selectedHomePortCode != null) ...[
+                        Text(
+                          'ID: ${selectedHomePortCode!}',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey[500],
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
               ],
             ),
+          ),
+          IconButton(
+            onPressed: () {
+              setState(() {
+                selectedHomePortId = null;
+                selectedHomePortName = null;
+                selectedHomePortCode = null;
+                selectedHomePortDistrict = null;
+              });
+            },
+            icon: Icon(
+              Icons.close,
+              size: 18,
+              color: Colors.grey[600],
+            ),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
           ),
         ],
       ),
     );
   }
 
-  // ─── Header — Maritime dark gradient with sonar accents ───
+  // ===========================================================================
+  // HEADER
+  // ===========================================================================
+
   Widget _buildHeader() {
     return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Color(0xFF020617), Color(0xFF0A192F), Color(0xFF0F2444)],
-        ),
-        border: Border(
-          bottom: BorderSide(color: Color(0x3322D3EE), width: 1),
-        ),
-      ),
-      child: Stack(
-        children: [
-          // Sonar / bathymetric accents
-          Positioned.fill(
-            child: CustomPaint(painter: _SonarAccentPainter()),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
           ),
-          Positioned(
-            top: -40,
-            left: -40,
-            child: Container(
-              width: 128, height: 128,
-              decoration: BoxDecoration(
-                color: cyan400.withOpacity(0.10),
-                shape: BoxShape.circle,
-              ),
+        ],
+      ),
+      child: Row(
+        children: [
+          IconButton(
+            onPressed: () => Navigator.pop(context),
+            icon: const Icon(Icons.arrow_back, color: Color(0xFF07347F)),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+          ),
+          const SizedBox(width: 8),
+          const Text(
+            'Boat Owner Details',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF07347F),
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 26, 16, 18),
-            child: Row(
-              children: [
-                // Back button
-                GestureDetector(
-                  onTap: () => Navigator.pop(context),
-                  child: Container(
-                    width: 44, height: 44,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.10),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                          color: Colors.white.withOpacity(0.15)),
-                    ),
-                    child: const Icon(Icons.arrow_back_rounded,
-                        color: Colors.white, size: 22),
-                  ),
-                ),
-                const SizedBox(width: 14),
-                // Titles
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        'Complete Profile',
-                        style: TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white,
-                          letterSpacing: -0.4,
-                          height: 1.15,
-                        ),
-                      ),
-                      SizedBox(height: 5),
-                      Row(
-                        children: [
-                          SizedBox(
-                            width: 7, height: 7,
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                color: cyan400,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                          ),
-                          SizedBox(width: 7),
-                          Text(
-                            'FISHERIES DEPARTMENT',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w800,
-                              color: cyan300,
-                              letterSpacing: 1.1,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                // Verification badge
-                Container(
-                  width: 42, height: 42,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF083344).withOpacity(0.75),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                        color: cyan400.withOpacity(0.40)),
-                    boxShadow: [
-                      BoxShadow(
-                        color: cyan400.withOpacity(0.25),
-                        blurRadius: 14,
-                        spreadRadius: 0,
-                      ),
-                    ],
-                  ),
-                  child: const Icon(Icons.verified_user_rounded,
-                      color: cyan300, size: 22),
-                ),
-              ],
+          const Spacer(),
+          TextButton(
+            onPressed: _saveDetails,
+            child: const Text(
+              'Save',
+              style: TextStyle(
+                color: Color(0xFF1257C7),
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ],
@@ -344,140 +325,100 @@ class _BoatOwnerDetailsScreenState extends State<BoatOwnerDetailsScreen> {
     );
   }
 
-  // ─── Title Section ───
+  // ===========================================================================
+  // TITLE SECTION
+  // ===========================================================================
+
   Widget _buildTitleSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'Personal Details',
+          'Complete Your Profile',
           style: TextStyle(
-            fontSize: 28,
-            fontWeight: FontWeight.w800,
-            color: slate900,
-            letterSpacing: -0.6,
-            height: 1.15,
+            fontSize: 20,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFF07347F),
           ),
         ),
-        const SizedBox(height: 6),
-        const Text(
-          'Please provide your information to complete the registration.',
+        const SizedBox(height: 4),
+        Text(
+          'Please provide your details to complete registration',
           style: TextStyle(
-            fontSize: 15,
-            color: slate600,
-            height: 1.45,
+            fontSize: 14,
+            color: Colors.grey[600],
           ),
-        ),
-        const SizedBox(height: 14),
-        Row(
-          children: [
-            Container(
-              width: 56, height: 6,
-              decoration: BoxDecoration(
-                color: ocean600,
-                borderRadius: BorderRadius.circular(3),
-              ),
-            ),
-            const SizedBox(width: 6),
-            Container(
-              width: 16, height: 6,
-              decoration: BoxDecoration(
-                color: ocean300,
-                borderRadius: BorderRadius.circular(3),
-              ),
-            ),
-            const SizedBox(width: 6),
-            Container(
-              width: 8, height: 6,
-              decoration: BoxDecoration(
-                color: ocean200,
-                borderRadius: BorderRadius.circular(3),
-              ),
-            ),
-          ],
         ),
       ],
     );
   }
 
-  // ─── Photo Upload ───
+  // ===========================================================================
+  // PHOTO UPLOAD
+  // ===========================================================================
+
   Widget _buildPhotoUpload() {
-    return Center(
-      child: Column(
-        children: [
-          GestureDetector(
-            onTap: _pickAvatar,
-            child: Stack(
-              children: [
-                // Outer glow ring
-                Container(
-                  width: 128, height: 128,
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        ocean100.withOpacity(0.9),
-                        slate100,
-                      ],
-                    ),
-                    border: Border.all(
-                        color: ocean200.withOpacity(0.6), width: 1),
-                    boxShadow: [
-                      BoxShadow(
-                        color: ocean500.withOpacity(0.08),
-                        blurRadius: 20,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: slate100,
-                      border: Border.all(color: Colors.white, width: 2),
-                    ),
-                    clipBehavior: Clip.antiAlias,
-                    child: _avatarFile != null
-                        ? Image.file(_avatarFile!, fit: BoxFit.cover)
-                        : const Icon(Icons.person_rounded,
-                        size: 60, color: slate400),
-                  ),
-                ),
-                // Camera badge
-                Positioned(
-                  right: 4,
-                  bottom: 4,
-                  child: Container(
-                    width: 40, height: 40,
-                    decoration: BoxDecoration(
-                      color: ocean600,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 2.5),
-                      boxShadow: [
-                        BoxShadow(
-                          color: ocean600.withOpacity(0.30),
-                          blurRadius: 10,
-                          offset: const Offset(0, 3),
-                        ),
-                      ],
-                    ),
-                    child: const Icon(Icons.camera_alt_rounded,
-                        size: 18, color: Colors.white),
-                  ),
-                ),
-              ],
-            ),
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
           ),
-          const SizedBox(height: 12),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
           const Text(
-            'Upload Official Photo',
+            'Owner Photo',
             style: TextStyle(
               fontSize: 14,
-              fontWeight: FontWeight.w700,
-              color: slate700,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF07347F),
+            ),
+          ),
+          const SizedBox(height: 8),
+          GestureDetector(
+            onTap: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Photo upload feature coming soon')),
+              );
+            },
+            child: Container(
+              width: double.infinity,
+              height: 120,
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: Colors.grey[300]!,
+                  width: 1.5,
+                  style: BorderStyle.solid,
+                ),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.cloud_upload_outlined,
+                    size: 40,
+                    color: Colors.grey[400],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Tap to upload',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey[500],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ],
@@ -485,448 +426,472 @@ class _BoatOwnerDetailsScreenState extends State<BoatOwnerDetailsScreen> {
     );
   }
 
-  // ─── Form Fields ───
+  // ===========================================================================
+  // FORM FIELDS
+  // ===========================================================================
+
   Widget _buildFormFields() {
-    return Column(
-      children: [
-        _buildTextField(
-          controller: ownerNameController,
-          label: 'Owner Name',
-          hint: 'Enter your full name',
-          icon: Icons.person_outline_rounded,
-        ),
-        const SizedBox(height: 18),
-        _buildTextField(
-          controller: aadhaarController,
-          label: 'Aadhaar Number',
-          hint: '12-digit Aadhaar number',
-          icon: Icons.assignment_ind_outlined,
-          keyboardType: TextInputType.number,
-          maxLength: 12,
-        ),
-        const SizedBox(height: 18),
-        _buildTextField(
-          controller: mobileController,
-          label: 'Mobile Number',
-          hint: '10-digit number',
-          icon: Icons.phone_android_outlined,
-          enabled: false,
-          trailing: _pill(
-            label: 'Verified',
-            fg: emerald600,
-            bg: emerald50,
-            border: emerald200,
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
           ),
-        ),
-        const SizedBox(height: 18),
-        _buildTextField(
-          controller: addressController,
-          label: 'Address',
-          hint: 'Enter your permanent address',
-          icon: Icons.location_on_outlined,
-          maxLines: 3,
-        ),
-        const SizedBox(height: 18),
-        _buildPortSelector(),
-      ],
+        ],
+      ),
+      child: Column(
+        children: [
+          _buildTextField(
+            label: 'Owner Name',
+            hint: 'Enter owner name',
+            controller: ownerNameController,
+            isRequired: true,
+          ),
+          const SizedBox(height: 16),
+          _buildTextField(
+            label: 'Address',
+            hint: 'Enter address',
+            controller: addressController,
+            isRequired: true,
+            maxLines: 2,
+          ),
+          const SizedBox(height: 16),
+          _buildTextField(
+            label: 'Aadhaar No',
+            hint: 'Enter Aadhaar number',
+            controller: aadhaarController,
+            isRequired: true,
+            keyboardType: TextInputType.number,
+            maxLength: 12,
+          ),
+          const SizedBox(height: 16),
+          _buildTextField(
+            label: 'Mobile No',
+            hint: 'Enter mobile number',
+            controller: mobileController,
+            isRequired: true,
+            keyboardType: TextInputType.phone,
+            maxLength: 10,
+            enabled: false,
+          ),
+          const SizedBox(height: 16),
+          _buildSearchableDropdownField(),
+        ],
+      ),
     );
   }
 
+  // ===========================================================================
+  // TEXT FIELD
+  // ===========================================================================
+
   Widget _buildTextField({
-    required TextEditingController controller,
     required String label,
     required String hint,
-    required IconData icon,
+    required TextEditingController controller,
+    bool isRequired = false,
     TextInputType keyboardType = TextInputType.text,
-    int? maxLength,
     int maxLines = 1,
+    int? maxLength,
     bool enabled = true,
-    Widget? trailing,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
-            color: slate800,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Container(
-          decoration: BoxDecoration(
-            color: enabled ? Colors.white : slate100,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: slate200, width: 1),
-            boxShadow: [
-              BoxShadow(
-                color: slate900.withOpacity(0.03),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
+        Row(
+          children: [
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF07347F),
               ),
-            ],
-          ),
-          child: Row(
-            children: [
-              const SizedBox(width: 14),
-              Icon(icon, size: 22, color: enabled ? ocean600 : slate400),
-              const SizedBox(width: 12),
-              Expanded(
-                child: TextField(
-                  controller: controller,
-                  keyboardType: keyboardType,
-                  maxLength: maxLength,
-                  maxLines: maxLines,
-                  enabled: enabled,
-                  style: const TextStyle(
-                    fontSize: 15.5,
-                    fontWeight: FontWeight.w500,
-                    color: slate900,
-                  ),
-                  decoration: InputDecoration(
-                    hintText: hint,
-                    hintStyle: const TextStyle(
-                        fontSize: 14.5, color: slate400),
-                    border: InputBorder.none,
-                    counterText: '',
-                    contentPadding:
-                    const EdgeInsets.symmetric(vertical: 16),
-                  ),
+            ),
+            if (isRequired) ...[
+              const SizedBox(width: 4),
+              const Text(
+                '*',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.red,
                 ),
               ),
-              if (trailing != null) ...[
-                trailing,
-                const SizedBox(width: 14),
-              ] else
-                const SizedBox(width: 14),
             ],
+          ],
+        ),
+        const SizedBox(height: 6),
+        TextField(
+          controller: controller,
+          keyboardType: keyboardType,
+          maxLines: maxLines,
+          maxLength: maxLength,
+          enabled: enabled,
+          style: const TextStyle(fontSize: 14),
+          decoration: InputDecoration(
+            hintText: hint,
+            hintStyle: TextStyle(
+              fontSize: 14,
+              color: Colors.grey[400],
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(
+                color: Colors.grey[300]!,
+              ),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(
+                color: Colors.grey[300]!,
+              ),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: const BorderSide(
+                color: Color(0xFF1257C7),
+                width: 2,
+              ),
+            ),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 12,
+            ),
+            counterText: '',
+            fillColor: enabled ? Colors.white : Colors.grey[50],
+            filled: !enabled,
           ),
         ),
       ],
     );
   }
 
-  Widget _buildPortSelector() {
+  // ===========================================================================
+  // SEARCHABLE DROPDOWN FIELD
+  // ===========================================================================
+
+  Widget _buildSearchableDropdownField() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Home Port',
-          style: TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
-            color: slate800,
-          ),
-        ),
-        const SizedBox(height: 8),
-        GestureDetector(
-          onTap: _showPortSelectionDialog,
-          child: Container(
-            padding: const EdgeInsets.symmetric(
-                horizontal: 14, vertical: 16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: slate200, width: 1),
-              boxShadow: [
-                BoxShadow(
-                  color: slate900.withOpacity(0.03),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.anchor_rounded,
-                    size: 22, color: ocean600),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    selectedHomePortName ?? 'Select your home port',
-                    style: TextStyle(
-                      fontSize: 15.5,
-                      fontWeight: FontWeight.w500,
-                      color: selectedHomePortName != null
-                          ? slate900
-                          : slate400,
-                    ),
-                  ),
-                ),
-                const Icon(Icons.keyboard_arrow_down_rounded,
-                    color: slate400, size: 24),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  // ─── Selected Port Info banner ───
-  Widget _buildSelectedPortInfo() {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: ocean50,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: ocean200),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(Icons.info_outline_rounded,
-              color: ocean600, size: 20),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              'Selected Port: $selectedHomePortName ($selectedHomePortCode) - $selectedHomePortDistrict',
-              style: const TextStyle(
-                fontSize: 13.5,
-                color: ocean900,
+        Row(
+          children: [
+            const Text(
+              'Home Port',
+              style: TextStyle(
+                fontSize: 14,
                 fontWeight: FontWeight.w600,
-                height: 1.4,
+                color: Color(0xFF07347F),
               ),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ─── Save Button (sticky-looking, full width) ───
-  Widget _buildSaveButton() {
-    final bool submitted = !isLoading && false; // kept for future state
-    return SizedBox(
-      width: double.infinity,
-      height: 58,
-      child: ElevatedButton(
-        onPressed: isLoading ? null : _saveProfile,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: emerald600,
-          foregroundColor: Colors.white,
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16)),
-          elevation: 0,
-          shadowColor: Colors.transparent,
-        ),
-        child: isLoading
-            ? const SizedBox(
-          width: 26, height: 26,
-          child: CircularProgressIndicator(
-              color: Colors.white, strokeWidth: 2.4),
-        )
-            : Row(
-          mainAxisSize: MainAxisSize.min,
-          children: const [
-            Icon(Icons.check_rounded,
-                color: Color(0xFF6EE7B7), size: 22),
-            SizedBox(width: 10),
-            Text(
-              'Complete Registration',
+            const SizedBox(width: 4),
+            const Text(
+              '*',
               style: TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.2,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Colors.red,
+              ),
+            ),
+            const Spacer(),
+            GestureDetector(
+              onTap: isLoadingPorts ? null : _refreshPorts,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.blue[50],
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(
+                    color: Colors.blue[200]!,
+                    width: 1,
+                  ),
+                ),
+                child: isLoadingPorts
+                    ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Color(0xFF1257C7),
+                  ),
+                )
+                    : Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.refresh,
+                      color: Colors.blue[700],
+                      size: 16,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Refresh',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.blue[700],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  // ─── Port Selection Modal ───
-  void _showPortSelectionDialog() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setModalState) => Container(
-          height: MediaQuery.of(context).size.height * 0.78,
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        const SizedBox(height: 6),
+        Container(
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: Colors.grey[300]!,
+            ),
+            borderRadius: BorderRadius.circular(8),
           ),
-          child: Column(
+          child: isLoadingPorts
+              ? const Padding(
+            padding: EdgeInsets.all(16.0),
+            child: Center(
+              child: Column(
+                children: [
+                  SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Color(0xFF1257C7),
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    'Loading ports...',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          )
+              : ports.isEmpty
+              ? Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Center(
+              child: Column(
+                children: [
+                  Icon(
+                    Icons.error_outline,
+                    size: 32,
+                    color: Colors.grey[400],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'No ports available',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextButton(
+                    onPressed: _refreshPorts,
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ),
+            ),
+          )
+              : Column(
             children: [
-              // Drag handle
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+                child: TextField(
+                  controller: searchController,
+                  onChanged: _filterPorts,
+                  decoration: InputDecoration(
+                    hintText: 'Search port by name, code or district...',
+                    hintStyle: TextStyle(
+                      fontSize: 13,
+                      color: Colors.grey[400],
+                    ),
+                    border: InputBorder.none,
+                    prefixIcon: Icon(
+                      Icons.search,
+                      size: 20,
+                      color: Colors.grey[400],
+                    ),
+                    suffixIcon: searchController.text.isNotEmpty
+                        ? IconButton(
+                      icon: Icon(
+                        Icons.clear,
+                        size: 18,
+                        color: Colors.grey[400],
+                      ),
+                      onPressed: () {
+                        searchController.clear();
+                        _filterPorts('');
+                      },
+                    )
+                        : null,
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                  ),
+                ),
+              ),
+              Divider(
+                height: 1,
+                color: Colors.grey[300],
+              ),
               Container(
-                width: 44, height: 5,
-                margin: const EdgeInsets.only(top: 12, bottom: 12),
-                decoration: BoxDecoration(
-                  color: slate300,
-                  borderRadius: BorderRadius.circular(3),
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height * 0.35,
+                  minHeight: 50,
                 ),
-              ),
-              // Header
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 4, 20, 14),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 42, height: 42,
-                      decoration: BoxDecoration(
-                        color: ocean50,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: ocean100),
-                      ),
-                      child: const Icon(Icons.anchor_rounded,
-                          color: ocean600, size: 22),
-                    ),
-                    const SizedBox(width: 12),
-                    const Text(
-                      'Select Home Port',
-                      style: TextStyle(
-                        fontSize: 19,
-                        fontWeight: FontWeight.w800,
-                        color: slate900,
-                      ),
-                    ),
-                    const Spacer(),
-                    if (isLoadingPorts)
-                      const SizedBox(
-                        width: 20, height: 20,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: ocean600),
-                      ),
-                  ],
-                ),
-              ),
-              // Search
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: slate100,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: slate200),
-                  ),
-                  child: TextField(
-                    onChanged: (val) {
-                      _filterPorts(val);
-                      setModalState(() {});
-                    },
-                    style: const TextStyle(fontSize: 15),
-                    decoration: const InputDecoration(
-                      hintText: 'Search by port name or code...',
-                      hintStyle:
-                      TextStyle(color: slate400, fontSize: 14.5),
-                      prefixIcon:
-                      Icon(Icons.search_rounded, color: slate500),
-                      border: InputBorder.none,
-                      contentPadding:
-                      EdgeInsets.symmetric(vertical: 14),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              // List
-              Expanded(
                 child: filteredPorts.isEmpty
-                    ? const Center(
-                    child: Text('No ports found',
-                        style: TextStyle(
-                            fontSize: 15, color: slate500)))
+                    ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Text(
+                      'No ports match your search',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                  ),
+                )
                     : ListView.builder(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 4),
+                  shrinkWrap: true,
                   itemCount: filteredPorts.length,
                   itemBuilder: (context, index) {
                     final port = filteredPorts[index];
-                    final isSelected =
-                        selectedHomePortId ==
-                            port['port_id']?.toString();
+                    final portName = port['port_name'] ?? port['port_code'] ?? '';
+                    final district = port['district'] ?? '';
+                    final portCode = port['port_code'] ?? '';
+                    final isSelected = selectedHomePortId == port['port_id'].toString();
+
                     return InkWell(
                       onTap: () {
                         setState(() {
-                          selectedHomePortId =
-                              port['port_id']?.toString();
-                          selectedHomePortName = port['port_name'];
-                          selectedHomePortCode = port['port_code'];
-                          selectedHomePortDistrict = port['district'];
+                          selectedHomePortId = port['port_id'].toString();
+                          selectedHomePortName = portName;
+                          selectedHomePortCode = portCode;
+                          selectedHomePortDistrict = district;
+                          searchController.clear();
+                          filteredPorts = List<Map<String, dynamic>>.from(ports);
                         });
-                        Navigator.pop(context);
                       },
-                      borderRadius: BorderRadius.circular(14),
                       child: Container(
-                        margin:
-                        const EdgeInsets.symmetric(vertical: 4),
-                        padding: const EdgeInsets.all(14),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
                         decoration: BoxDecoration(
-                          color: isSelected
-                              ? ocean50
-                              : Colors.white,
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(
-                            color: isSelected
-                                ? ocean500
-                                : slate200,
-                            width: isSelected ? 1.6 : 1,
+                          color: isSelected ? Colors.blue[50] : Colors.transparent,
+                          border: Border(
+                            bottom: BorderSide(
+                              color: Colors.grey[200]!,
+                              width: 0.5,
+                            ),
                           ),
                         ),
                         child: Row(
                           children: [
-                            Container(
-                              width: 42, height: 42,
-                              decoration: BoxDecoration(
-                                color: isSelected
-                                    ? ocean600
-                                    : slate100,
-                                shape: BoxShape.circle,
+                            if (isSelected)
+                              Icon(
+                                Icons.check_circle,
+                                color: Colors.blue[700],
+                                size: 18,
+                              )
+                            else
+                              SizedBox(
+                                width: 18,
+                                child: Icon(
+                                  Icons.radio_button_unchecked,
+                                  color: Colors.grey[400],
+                                  size: 18,
+                                ),
                               ),
-                              child: Icon(
-                                Icons.anchor_rounded,
-                                size: 20,
-                                color: isSelected
-                                    ? Colors.white
-                                    : slate500,
-                              ),
-                            ),
-                            const SizedBox(width: 14),
+                            const SizedBox(width: 10),
                             Expanded(
                               child: Column(
-                                crossAxisAlignment:
-                                CrossAxisAlignment.start,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Text(
-                                    port['port_name'] ?? 'Unknown',
+                                    portName,
                                     style: TextStyle(
-                                      fontSize: 15.5,
-                                      fontWeight: isSelected
-                                          ? FontWeight.w800
-                                          : FontWeight.w600,
-                                      color: isSelected
-                                          ? ocean700
-                                          : slate900,
+                                      fontSize: 14,
+                                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                                      color: isSelected ? Color(0xFF07347F) : Colors.black87,
                                     ),
+                                    overflow: TextOverflow.ellipsis,
                                   ),
-                                  if ((port['port_code'] ?? '')
-                                      .toString()
-                                      .isNotEmpty) ...[
-                                    const SizedBox(height: 3),
-                                    Text(
-                                      port['port_code'] ?? '',
-                                      style: const TextStyle(
-                                        fontSize: 12.5,
-                                        color: slate500,
-                                        fontWeight:
-                                        FontWeight.w500,
-                                        fontFamily: 'monospace',
-                                      ),
+                                  if (district.isNotEmpty || portCode.isNotEmpty) ...[
+                                    const SizedBox(height: 2),
+                                    Row(
+                                      children: [
+                                        if (district.isNotEmpty) ...[
+                                          Text(
+                                            district,
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              color: Colors.grey[600],
+                                            ),
+                                          ),
+                                        ],
+                                        if (district.isNotEmpty && portCode.isNotEmpty) ...[
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            '•',
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              color: Colors.grey[400],
+                                            ),
+                                          ),
+                                          const SizedBox(width: 4),
+                                        ],
+                                        if (portCode.isNotEmpty) ...[
+                                          Text(
+                                            portCode,
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              color: Colors.grey[500],
+                                            ),
+                                          ),
+                                        ],
+                                      ],
                                     ),
                                   ],
                                 ],
                               ),
                             ),
-                            if (isSelected)
-                              const Icon(
-                                  Icons.check_circle_rounded,
-                                  color: ocean600, size: 24),
+                            if (port['port_type'] != null) ...[
+                              const SizedBox(width: 4),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.blue[50],
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  _getPortTypeLabel(port['port_type']),
+                                  style: TextStyle(
+                                    fontSize: 9,
+                                    color: Colors.blue[700],
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       ),
@@ -934,127 +899,253 @@ class _BoatOwnerDetailsScreenState extends State<BoatOwnerDetailsScreen> {
                   },
                 ),
               ),
-              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.grey[50],
+                  borderRadius: const BorderRadius.only(
+                    bottomLeft: Radius.circular(8),
+                    bottomRight: Radius.circular(8),
+                  ),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      '${filteredPorts.length} of ${ports.length} ports',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                    if (selectedHomePortId != null)
+                      Text(
+                        'Selected: $selectedHomePortName',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.blue[700],
+                          fontWeight: FontWeight.w500,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                  ],
+                ),
+              ),
             ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _getPortTypeLabel(String? portType) {
+    if (portType == null) return '';
+    switch (portType) {
+      case 'FISHING_HARBOUR':
+        return 'Harbour';
+      case 'FISH_LANDING_CENTRE':
+        return 'Landing';
+      default:
+        return portType.replaceAll('_', ' ').toLowerCase();
+    }
+  }
+
+  // ===========================================================================
+  // REFRESH PORTS
+  // ===========================================================================
+
+  Future<void> _refreshPorts() async {
+    setState(() {
+      isLoadingPorts = true;
+    });
+
+    try {
+      setState(() {
+        ports = [];
+        filteredPorts = [];
+      });
+
+      final response = await _apiService.getPorts();
+
+      if (response['success'] == true) {
+        final items = response['data']['items'] as List?;
+        if (items != null && items.isNotEmpty) {
+          setState(() {
+            ports = List<Map<String, dynamic>>.from(items);
+            filteredPorts = List<Map<String, dynamic>>.from(items);
+          });
+          _showSuccess('Ports refreshed successfully! ${ports.length} ports loaded');
+        } else {
+          setState(() {
+            ports = [];
+            filteredPorts = [];
+          });
+          _showError('No ports available');
+        }
+      } else {
+        setState(() {
+          ports = [];
+          filteredPorts = [];
+        });
+        _showError(response['message'] ?? 'Failed to refresh ports');
+      }
+    } catch (e) {
+      setState(() {
+        ports = [];
+        filteredPorts = [];
+      });
+      _showError('Network error: ${e.toString()}');
+    } finally {
+      if (mounted) {
+        setState(() {
+          isLoadingPorts = false;
+        });
+      }
+    }
+  }
+
+  // ===========================================================================
+  // SAVE BUTTON
+  // ===========================================================================
+
+  Widget _buildSaveButton() {
+    return SizedBox(
+      width: double.infinity,
+      height: 48,
+      child: ElevatedButton(
+        onPressed: isLoading ? null : _saveDetails,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFF1257C7),
+          foregroundColor: Colors.white,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+        child: isLoading
+            ? const SizedBox(
+          width: 24,
+          height: 24,
+          child: CircularProgressIndicator(
+            color: Colors.white,
+            strokeWidth: 2,
+          ),
+        )
+            : const Text(
+          'Save & Continue',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
           ),
         ),
       ),
     );
   }
 
-  // ─── Avatar Picker (UI-only helper) ───
-  Future<void> _pickAvatar() async {
-    try {
-      final picker = ImagePicker();
-      final picked =
-      await picker.pickImage(source: ImageSource.gallery, imageQuality: 80);
-      if (picked != null) {
-        setState(() => _avatarFile = File(picked.path));
-      }
-    } catch (_) {
-      // Silently ignore — UI-only
-    }
-  }
+  // ===========================================================================
+  // SAVE FUNCTION
+  // ===========================================================================
 
-  // ─── Small pill helper ───
-  Widget _pill({
-    required String label,
-    required Color fg,
-    required Color bg,
-    required Color border,
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: border),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w800,
-          color: fg,
-        ),
-      ),
-    );
-  }
-
-  // ══════════════════════════════════════════════════════════════
-  //  SAVE LOGIC (UNCHANGED)
-  // ══════════════════════════════════════════════════════════════
-
-  Future<void> _saveProfile() async {
-    final name = ownerNameController.text.trim();
-    final aadhaar = aadhaarController.text.trim();
-    final address = addressController.text.trim();
-    final mobile = mobileController.text.trim();
-
-    if (name.isEmpty ||
-        aadhaar.isEmpty ||
-        address.isEmpty ||
-        selectedHomePortId == null) {
-      _showError('Please fill all required fields');
+  void _saveDetails() async {
+    // Validate fields
+    if (ownerNameController.text.trim().isEmpty) {
+      _showError('Please enter owner name');
       return;
     }
-
-    if (aadhaar.length != 12) {
-      _showError('Aadhaar number must be 12 digits');
+    if (addressController.text.trim().isEmpty) {
+      _showError('Please enter address');
+      return;
+    }
+    if (aadhaarController.text.trim().isEmpty) {
+      _showError('Please enter Aadhaar number');
+      return;
+    }
+    if (aadhaarController.text.trim().length != 12) {
+      _showError('Please enter a valid 12-digit Aadhaar number');
+      return;
+    }
+    if (mobileController.text.trim().isEmpty) {
+      _showError('Please enter mobile number');
+      return;
+    }
+    if (mobileController.text.trim().length != 10) {
+      _showError('Please enter a valid 10-digit mobile number');
+      return;
+    }
+    if (selectedHomePortId == null) {
+      _showError('Please select a home port');
       return;
     }
 
     setState(() => isLoading = true);
-    try {
-      final session = await _db.getUserSession();
-      final setupToken = session?['setup_token'] ?? '';
 
+    try {
+      // Build request with ONLY the required fields
       final response = await _apiService.createProfile(
-        ownerName: name,
-        aadhaarNo: aadhaar,
-        primaryPortId: int.parse(selectedHomePortId!),
-        mobileNo: mobile,
-        address: address,
-        setupToken: setupToken,
+        ownerName: ownerNameController.text.trim(),
+        aadhaarNo: aadhaarController.text.trim(),
+        primaryPortId: selectedHomePortId!,
+        otp: '000000',
+        mobileNo: mobileController.text.trim(),
+        address: addressController.text.trim(),
       );
 
+      print('📥 Create Profile Response: $response');
+
       if (response['success'] == true) {
-        // Update local boat owner info
+        final responseData = response['data'];
+
+        // Save boat owner to local database
         await _db.insertBoatOwner({
-          'owner_name': name,
-          'address': address,
-          'aadhaar': aadhaar,
-          'mobile': mobile,
+          'owner_name': ownerNameController.text.trim(),
+          'address': addressController.text.trim(),
+          'aadhaar': aadhaarController.text.trim(),
+          'mobile': mobileController.text.trim(),
           'home_port_id': selectedHomePortId,
           'home_port_name': selectedHomePortName,
-          'photo_path': _avatarFile?.path,
+          'photo_path': null,
         });
 
-        _showSuccess('Profile completed successfully');
+        // Insert sample boats
+        if (selectedHomePortName != null) {
+          final owner = await _db.getBoatOwner();
+          if (owner != null) {
+            await _db.insertSampleBoats(owner['id'], selectedHomePortName!);
+          }
+        }
+
+        setState(() => isLoading = false);
+
+        _showSuccess('Profile created successfully!');
+
         if (mounted) {
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
-                builder: (context) => const BoatSelectionScreen()),
+              builder: (context) => const BoatSelectionScreen(),
+            ),
           );
         }
       } else {
-        _showError(response['message'] ?? 'Profile creation failed');
+        setState(() => isLoading = false);
+        _showError(response['message'] ?? 'Failed to create profile');
       }
     } catch (e) {
-      _showError('An error occurred: ${e.toString()}');
-    } finally {
-      if (mounted) setState(() => isLoading = false);
+      setState(() => isLoading = false);
+      _showError('Error saving data: ${e.toString()}');
     }
   }
+
+  // ===========================================================================
+  // HELPER METHODS
+  // ===========================================================================
 
   void _showError(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: const Color(0xFFDC2626),
-        behavior: SnackBarBehavior.floating,
+        backgroundColor: Colors.red,
       ),
     );
   }
@@ -1064,49 +1155,8 @@ class _BoatOwnerDetailsScreenState extends State<BoatOwnerDetailsScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: emerald600,
-        behavior: SnackBarBehavior.floating,
+        backgroundColor: Colors.green,
       ),
     );
   }
-}
-
-// ══════════════════════════════════════════════════════════════
-//  Sonar accent painter (header decoration)
-// ══════════════════════════════════════════════════════════════
-class _SonarAccentPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1
-      ..color = const Color(0xFF22D3EE).withOpacity(0.20);
-
-    // Radar rings on the top-right
-    final center = Offset(size.width - 30, 20);
-    canvas.drawCircle(center, 40, paint);
-    canvas.drawCircle(
-      center,
-      80,
-      paint..color = const Color(0xFF22D3EE).withOpacity(0.12),
-    );
-
-    // Wave path (bottom)
-    final wave = Path()
-      ..moveTo(0, size.height * 0.7)
-      ..quadraticBezierTo(size.width * 0.25, size.height * 0.55,
-          size.width * 0.5, size.height * 0.7)
-      ..quadraticBezierTo(size.width * 0.75, size.height * 0.85,
-          size.width, size.height * 0.7);
-    canvas.drawPath(
-      wave,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.5
-        ..color = const Color(0xFF38BDF8).withOpacity(0.25),
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

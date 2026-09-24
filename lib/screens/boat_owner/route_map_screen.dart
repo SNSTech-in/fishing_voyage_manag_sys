@@ -5,7 +5,7 @@ import 'package:flutter_map/flutter_map.dart';
 
 import 'package:latlong2/latlong.dart';
 import 'package:fishing_voyage_manag_sys/database/database_helper.dart';
-import 'package:fishing_voyage_manag_sys/services/offline_map_service.dart';
+import 'package:fishing_voyage_manag_sys/services/background_Services/offline_map_service.dart';
 
 class RouteMapScreen extends StatefulWidget {
   final int voyageId;

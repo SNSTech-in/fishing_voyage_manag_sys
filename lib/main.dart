@@ -8,16 +8,16 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
 import 'package:fishing_voyage_manag_sys/database/database_helper.dart';
-import 'package:fishing_voyage_manag_sys/services/api_service.dart';
-import 'package:fishing_voyage_manag_sys/services/location_service.dart';
-import 'package:fishing_voyage_manag_sys/services/background_location_task.dart';
+import 'package:fishing_voyage_manag_sys/services/api_services/api_service.dart';
+import 'package:fishing_voyage_manag_sys/services/background_Services/location_service.dart';
+import 'package:fishing_voyage_manag_sys/services/background_Services/background_location_task.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
-import 'package:fishing_voyage_manag_sys/services/officer_sync_service.dart';
-import 'package:fishing_voyage_manag_sys/services/sync_service.dart';
-import 'package:fishing_voyage_manag_sys/services/background_service_manager.dart';
-import 'package:fishing_voyage_manag_sys/services/background_service.dart';
-import 'package:fishing_voyage_manag_sys/services/offline_map_service.dart';
+import 'package:fishing_voyage_manag_sys/services/background_Services/officer_sync_service.dart';
+import 'package:fishing_voyage_manag_sys/services/background_Services/sync_service.dart';
+import 'package:fishing_voyage_manag_sys/services/background_Services/background_service_manager.dart';
+import 'package:fishing_voyage_manag_sys/services/background_Services/background_service.dart';
+import 'package:fishing_voyage_manag_sys/services/background_Services/offline_map_service.dart';
 import 'package:fishing_voyage_manag_sys/screens/depart_login_selection.dart';
 import 'package:fishing_voyage_manag_sys/screens/boat_owner/boat_selection_screen.dart';
 import 'package:fishing_voyage_manag_sys/screens/boat_owner/boat_owner_login_screen.dart';

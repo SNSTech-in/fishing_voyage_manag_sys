@@ -4,7 +4,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import 'package:flutter/foundation.dart';
 import 'package:fishing_voyage_manag_sys/utiles/ports_utils.dart';
-import 'package:fishing_voyage_manag_sys/services/api_service.dart';
+import 'package:fishing_voyage_manag_sys/services/api_services/api_service.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper _instance = DatabaseHelper._internal();
@@ -1755,6 +1755,34 @@ class DatabaseHelper {
       return result.isNotEmpty;
     });
   }
+
+  Future<void> insertSampleBoats(int ownerId, String homePort) async {
+    List<Map<String, dynamic>> sampleBoats = [
+      {
+        'owner_id': ownerId,
+        'boat_name': 'Boat 1',
+        'registration_number': 'IND-GA-01-MM-1234',
+        'length': '12.5 m',
+        'engine': '120 HP',
+        'home_port': homePort,
+        'is_selected': 0,
+      },
+      {
+        'owner_id': ownerId,
+        'boat_name': 'Boat 2',
+        'registration_number': 'IND-GA-01-MM-5678',
+        'length': '10.2 m',
+        'engine': '90 HP',
+        'home_port': homePort,
+        'is_selected': 0,
+      },
+    ];
+
+    for (var boat in sampleBoats) {
+      await insertBoat(boat);
+    }
+  }
+
 
   Future<int> addCustomPort(Map<String, dynamic> port) async {
     return await runWithRetry((db) async {
