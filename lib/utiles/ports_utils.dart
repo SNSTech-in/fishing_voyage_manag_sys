@@ -4,6 +4,18 @@ import '../database/database_helper.dart';
 class PortsUtils {
   static final DatabaseHelper _dbHelper = DatabaseHelper();
 
+  // Complete Coordinate Map for All Default Ports
+  static const Map<String, Map<String, double>> defaultPortCoordinates = {
+    'Agati': {'lat': 10.831, 'lng': 72.197},
+    'Kavarati': {'lat': 10.567, 'lng': 72.642},
+    'Androdh': {'lat': 10.804, 'lng': 72.640},
+    'Kalpeni': {'lat': 10.093, 'lng': 73.644},
+    'Kadmat': {'lat': 11.224, 'lng': 72.785},
+    'Amini': {'lat': 11.121, 'lng': 72.746},
+    'Chetlat': {'lat': 11.704, 'lng': 72.720},
+    'Bitra': {'lat': 11.573, 'lng': 72.222},
+  };
+
   // Get all ports (default + custom)
   static Future<List<String>> getAllPorts() async {
     try {
@@ -45,10 +57,12 @@ class PortsUtils {
   }
 
   // Add custom port
-  static Future<int> addCustomPort(String portName) async {
+  static Future<int> addCustomPort(String portName, {double? lat, double? lng}) async {
     try {
       final newPort = {
         'port_name': portName,
+        'latitude': lat,
+        'longitude': lng,
         'is_custom': 1,
         'created_at': DateTime.now().toIso8601String(),
       };
