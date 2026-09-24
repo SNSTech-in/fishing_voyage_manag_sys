@@ -24,6 +24,8 @@ import 'package:fishing_voyage_manag_sys/screens/boat_owner/boat_owner_login_scr
 import 'package:fishing_voyage_manag_sys/screens/boat_owner/boat_owner_details_screen.dart';
 import 'package:fishing_voyage_manag_sys/screens/boat_owner/dashboard_screen.dart';
 
+
+
 @pragma('vm:entry-point')
 void startLocationTask() {
   FlutterForegroundTask.setTaskHandler(BackgroundLocationTask());
