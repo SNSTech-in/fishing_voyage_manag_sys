@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../officer_Screens/screens/officer_login_screen.dart';
 import 'boat_owner/boat_owner_login_screen.dart';
-import '../officer/screens/officer_login_screen.dart';
-import '../officer/officer_main_screen.dart';
 
 class DepartLoginSelection extends StatelessWidget {
   const DepartLoginSelection({super.key});

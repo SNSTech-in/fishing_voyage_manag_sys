@@ -1,14 +1,14 @@
-import 'dart:async';
+// lib/screens/boat_owner/sos_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:connectivity_plus/connectivity_plus.dart';
 
+import 'package:fishing_voyage_manag_sys/services/api_services/api_service.dart';
 import 'package:fishing_voyage_manag_sys/database/database_helper.dart';
 import 'package:fishing_voyage_manag_sys/services/background_Services/offline_queue_service.dart';
-import 'package:fishing_voyage_manag_sys/services/background_Services/sync_service.dart';
 import 'package:fishing_voyage_manag_sys/services/background_Services/offline_map_service.dart';
 import 'package:fishing_voyage_manag_sys/services/background_Services/event_location_service.dart';
 
@@ -31,7 +31,9 @@ class SOSScreen extends StatefulWidget {
 }
 
 class _SOSScreenState extends State<SOSScreen> {
+  final ApiService _apiService = ApiService();
   final DatabaseHelper _db = DatabaseHelper();
+
   final MapController _mapController = MapController();
 
   static const LatLng _defaultLocation = LatLng(15.4909, 73.8278);
@@ -145,79 +147,152 @@ class _SOSScreenState extends State<SOSScreen> {
   }
 
   // ============================================================
-  // ⭐ SEND SOS — OFFLINE-FIRST FLOW
+  // SEND SOS — OFFLINE-FIRST FLOW
   // ============================================================
 
   Future<void> _sendSOS() async {
     if (_isLoading || _isCiting) return;
+
     setState(() => _isLoading = true);
 
+    final queue = OfflineQueueService.instance;
+    final online = await queue.isOnline();
+
     try {
+      debugPrint('🚨 [SOS] Start — online=$online');
+
+      // 1. Location
       final loc = await EventLocationService.acquire(
         voyageId: widget.intimationId,
         tag: 'SOS',
       );
       if (loc == null) {
-        throw Exception('Unable to acquire location. Enable GPS.');
+        throw Exception(
+            'Unable to acquire location for SOS. Please ensure GPS is enabled.');
+      }
+      debugPrint('📍 [SOS] Location: ${loc.lat}, ${loc.lng}');
+
+      // 2. Typed values captured ONCE
+      final String sosTimestamp = DateTime.now().toIso8601String();
+      final String remarksText = _remarksController.text.trim();
+      final String sosMessage =
+      remarksText.isEmpty ? 'SOS Alert' : remarksText;
+
+      // 3. Payload (used for both direct send and queue)
+      final Map<String, dynamic> payload = {
+        'intimation_id': widget.intimationId,
+        'boat_reg_no': widget.boatRegNo,
+        'latitude': loc.lat,
+        'longitude': loc.lng,
+        'location_source': loc.source,
+        'sos_datetime': sosTimestamp,
+        'remarks': remarksText,
+        'sos_type': 'OTHER',
+        'severity': 'HIGH',
+      };
+
+      // 4. Token
+      final session = await _db.getUserSession();
+      final token = session?['access_token']?.toString();
+
+      // 5. OFFLINE → queue only
+      if (!online) {
+        debugPrint('📴 [SOS] Offline — queueing locally');
+        await queue.queueSos(
+          payload: payload,
+          lat: loc.lat,
+          lng: loc.lng,
+        );
+
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                '📴 Offline — SOS saved. It will send automatically when online.'),
+            backgroundColor: Color(0xFFF7B928),
+            duration: Duration(seconds: 3),
+          ),
+        );
+        Navigator.pop(context, true);
+        return;
       }
 
-      final ts = DateTime.now().toUtc().toIso8601String();
-      final remarks = _remarksController.text.trim();
+      // 6. ONLINE but no token → queue
+      if (token == null || token.isEmpty) {
+        debugPrint('⚠️ [SOS] No token — queueing anyway');
+        await queue.queueSos(
+          payload: payload,
+          lat: loc.lat,
+          lng: loc.lng,
+        );
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'Session expired. SOS saved locally for retry on login.'),
+            backgroundColor: Color(0xFFF7B928),
+          ),
+        );
+        Navigator.pop(context, true);
+        return;
+      }
 
-      final queueId = await _db.insertSos(
+      // 7. ONLINE with token → direct send (awaited)
+      debugPrint('📤 [SOS] Online — sending directly to backend');
+      final response = await _apiService.sendSos(
         intimationId: widget.intimationId,
         latitude: loc.lat,
         longitude: loc.lng,
-        sosDatetime: ts,
-        description: remarks.isEmpty ? 'SOS Alert' : remarks,
+        timestamp: sosTimestamp,
+        message: sosMessage,
+        token: token,
         sosType: 'OTHER',
-        severity: 'HIGH',
         locationSource: loc.source,
+        severity: 'HIGH',
       );
-      debugPrint('💾 [SOS] queued id=$queueId');
+      debugPrint('📥 [SOS] Backend response: $response');
 
-      final online = await _hasNetwork();
-      bool sent = false;
-      if (online) {
-        try {
-          await SyncService().syncAll();
-          final db = await _db.database;
-          final rows = await db.query('sos_queue',
-              where: 'id = ? AND synced = 1', whereArgs: [queueId], limit: 1);
-          sent = rows.isNotEmpty;
-        } catch (e) {
-          debugPrint('⚠️ [SOS] sync attempt: $e');
-        }
+      // 8. Backend confirmed
+      if (response['success'] == true) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ SOS sent to authorities'),
+            backgroundColor: Color(0xFF31A24C),
+          ),
+        );
+        Navigator.pop(context, true);
+        return;
       }
 
+      // 9. Backend rejected → queue for retry
+      debugPrint('⚠️ [SOS] Backend rejected → queueing for retry');
+      await queue.queueSos(
+        payload: payload,
+        lat: loc.lat,
+        lng: loc.lng,
+      );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(sent
-            ? '✅ SOS sent to authorities'
-            : '📴 SOS saved — will send when online'),
-        backgroundColor:
-            sent ? const Color(0xFF31A24C) : const Color(0xFFF7B928),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              '⚠️ Server unavailable: ${response['message'] ?? 'unknown'}. SOS saved for retry.'),
+          backgroundColor: const Color(0xFFF7B928),
+        ),
+      );
       Navigator.pop(context, true);
     } catch (e, st) {
-      debugPrint('❌ [SOS] $e\n$st');
+      debugPrint('❌ [SOS] Error: $e\n$st');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Failed to send SOS: $e'),
-          backgroundColor: Colors.red,
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to send SOS: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  Future<bool> _hasNetwork() async {
-    try {
-      final r = await Connectivity().checkConnectivity();
-      return r.any((e) => e != ConnectivityResult.none);
-    } catch (_) {
-      return false;
     }
   }
 
@@ -660,7 +735,7 @@ class _SOSScreenState extends State<SOSScreen> {
   }
 
   // ============================================================
-  // ⭐ SEND CITING — SAME OFFLINE-FIRST FLOW
+  // SEND CITING — SAME OFFLINE-FIRST FLOW AS SOS
   // ============================================================
 
   Future<void> _sendCiting({
@@ -669,100 +744,138 @@ class _SOSScreenState extends State<SOSScreen> {
     required String remarks,
   }) async {
     if (_isCiting || _isLoading) return;
+
     setState(() => _isCiting = true);
 
+    final queue = OfflineQueueService.instance;
+    final online = await queue.isOnline();
+
     try {
+      debugPrint('🚨 [CITING] Start — online=$online');
+
       final loc = await EventLocationService.acquire(
         voyageId: widget.intimationId,
         tag: 'CITING',
       );
-      if (loc == null) throw Exception('Unable to acquire location.');
+      if (loc == null) {
+        throw Exception(
+            'Unable to acquire location for Citing report.');
+      }
+      debugPrint('📍 [CITING] Location: ${loc.lat}, ${loc.lng}');
 
-      final ts = DateTime.now().toUtc().toIso8601String();
+      // Typed value captured ONCE
+      final String citingTimestamp = DateTime.now().toIso8601String();
 
-      final queueId = await _db.insertCiting(
-        intimationId: widget.intimationId,
-        latitude: loc.lat,
-        longitude: loc.lng,
-        citingDatetime: ts,
-        citingType: citingType,
-        remarks: remarks,
-        sightedBoatCount: sightedBoatCount,
-        illegalActivityType: _defaultIllegalActivityType,
-      );
-      debugPrint('💾 [CITING] queued id=$queueId');
+      final Map<String, dynamic> payload = {
+        'intimation_id': widget.intimationId,
+        'latitude': loc.lat,
+        'longitude': loc.lng,
+        'citing_type': citingType,
+        'citing_datetime': citingTimestamp,
+        'sighted_boat_count': sightedBoatCount,
+        'remarks': remarks,
+        'illegal_activity_type': _defaultIllegalActivityType,
+      };
 
-      final online = await _hasNetwork();
-      bool sent = false;
-      if (online) {
-        try {
-          await SyncService().syncAll();
-          final db = await _db.database;
-          final rows = await db.query('citing_queue',
-              where: 'id = ? AND synced = 1', whereArgs: [queueId], limit: 1);
-          sent = rows.isNotEmpty;
-        } catch (e) {
-          debugPrint('⚠️ [CITING] sync attempt: $e');
-        }
+      final session = await _db.getUserSession();
+      final token = session?['access_token']?.toString();
+
+      // OFFLINE → queue
+      if (!online) {
+        debugPrint('📴 [CITING] Offline — queueing locally');
+        await queue.queueCiting(
+          payload: payload,
+          lat: loc.lat,
+          lng: loc.lng,
+          citingType: citingType,
+        );
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                '📴 Offline — Citing saved. It will sync when online.'),
+            backgroundColor: Color(0xFFF7B928),
+          ),
+        );
+        Navigator.pop(context, true);
+        return;
       }
 
+      // ONLINE but no token → queue
+      if (token == null || token.isEmpty) {
+        debugPrint('⚠️ [CITING] No token — queueing anyway');
+        await queue.queueCiting(
+          payload: payload,
+          lat: loc.lat,
+          lng: loc.lng,
+          citingType: citingType,
+        );
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'Session expired. Citing saved locally for retry on login.'),
+            backgroundColor: Color(0xFFF7B928),
+          ),
+        );
+        Navigator.pop(context, true);
+        return;
+      }
+
+      // ONLINE with token → direct send
+      debugPrint('📤 [CITING] Online — sending directly to backend');
+      final response = await _apiService.sendCiting(
+        intimationId: widget.intimationId,
+        citingReason: citingType,
+        latitude: loc.lat,
+        longitude: loc.lng,
+        timestamp: citingTimestamp,
+        token: token,
+      );
+      debugPrint('📥 [CITING] Backend response: $response');
+
+      if (response['success'] == true) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Citing reported'),
+            backgroundColor: Color(0xFF31A24C),
+          ),
+        );
+        Navigator.pop(context, true);
+        return;
+      }
+
+      // Backend rejected → queue
+      debugPrint('⚠️ [CITING] Backend rejected → queueing');
+      await queue.queueCiting(
+        payload: payload,
+        lat: loc.lat,
+        lng: loc.lng,
+        citingType: citingType,
+      );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(sent
-            ? '✅ Citing reported'
-            : '📴 Citing saved — will sync when online'),
-        backgroundColor:
-            sent ? const Color(0xFF31A24C) : const Color(0xFFF7B928),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              '⚠️ Server unavailable: ${response['message'] ?? 'unknown'}. Citing saved for retry.'),
+          backgroundColor: const Color(0xFFF7B928),
+        ),
+      );
       Navigator.pop(context, true);
     } catch (e, st) {
-      debugPrint('❌ [CITING] $e\n$st');
+      debugPrint('❌ [CITING] Error: $e\n$st');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Failed to report citing: $e'),
-          backgroundColor: Colors.red,
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to report citing: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _isCiting = false);
     }
-  }
-
-  // ============================================================
-  // API ERROR PARSER
-  // ============================================================
-
-  String _extractApiError(Map<String, dynamic> response) {
-    final dynamic errors = response['errors'];
-    if (errors is List && errors.isNotEmpty) {
-      final List<String> messages = [];
-      for (final dynamic item in errors) {
-        if (item is Map) {
-          final dynamic field = item['field'];
-          final dynamic message = item['message'];
-          if (field != null && message != null) {
-            messages.add('$field: $message');
-          } else if (message != null) {
-            messages.add(message.toString());
-          }
-        } else {
-          messages.add(item.toString());
-        }
-      }
-      if (messages.isNotEmpty) return messages.join('\n');
-    }
-    final dynamic message = response['message'];
-    if (message != null && message.toString().trim().isNotEmpty) {
-      return message.toString();
-    }
-    return 'Failed to report citing.';
-  }
-
-  String _cleanException(dynamic error) {
-    return error
-        .toString()
-        .replaceFirst('Exception: ', '')
-        .trim();
   }
 
   // ============================================================
@@ -812,7 +925,7 @@ class _SOSScreenState extends State<SOSScreen> {
   }
 
   // ============================================================
-  // DETAIL ROW (used in dialogs)
+  // DETAIL ROW
   // ============================================================
 
   Widget _buildDetailRow(String label, String value) {
