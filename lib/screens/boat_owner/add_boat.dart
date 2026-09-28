@@ -3,7 +3,7 @@
 import 'package:flutter/material.dart';
 
 import '../../database/database_helper.dart';
-import '../../services/api_services/api_service.dart';
+import '../../services/api_services/boat_owners_api_service.dart';
 
 class AddBoat extends StatefulWidget {
   const AddBoat({super.key});
@@ -13,7 +13,7 @@ class AddBoat extends StatefulWidget {
 }
 
 class _AddBoatState extends State<AddBoat> {
-  final ApiService _apiService = ApiService();
+  final BoatOwnwesApiService _apiService = BoatOwnwesApiService();
   final DatabaseHelper _db = DatabaseHelper();
 
   List<Map<String, dynamic>> boats = [];

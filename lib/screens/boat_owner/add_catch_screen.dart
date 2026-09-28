@@ -2,7 +2,7 @@
 
 import 'package:flutter/material.dart';
 
-import '../../services/api_services/api_service.dart';
+import '../../services/api_services/boat_owners_api_service.dart';
 
 class AddCatchScreen extends StatefulWidget {
   final int voyageId;
@@ -17,7 +17,7 @@ class AddCatchScreen extends StatefulWidget {
 }
 
 class _AddCatchScreenState extends State<AddCatchScreen> {
-  final ApiService _apiService = ApiService();
+  final BoatOwnwesApiService _apiService = BoatOwnwesApiService();
 
   List<Map<String, dynamic>> fishSpecies = [];
   List<Map<String, dynamic>> selectedItems = [];

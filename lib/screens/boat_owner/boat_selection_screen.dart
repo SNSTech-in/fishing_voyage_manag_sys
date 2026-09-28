@@ -2,7 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:fishing_voyage_manag_sys/database/database_helper.dart';
-import 'package:fishing_voyage_manag_sys/services/api_services/api_service.dart';
+import 'package:fishing_voyage_manag_sys/services/api_services/boat_owners_api_service.dart';
 import 'package:fishing_voyage_manag_sys/screens/depart_login_selection.dart';
 import 'dashboard_screen.dart';
 
@@ -41,7 +41,7 @@ class _BoatSelectionScreenState extends State<BoatSelectionScreen> {
   static const Color darkBlue = Color(0xFF07347F);
   static const Color lightBlue = Color(0xFFE8F3FF);
 
-  final ApiService _apiService = ApiService();
+  final BoatOwnwesApiService _apiService = BoatOwnwesApiService();
   final DatabaseHelper _db = DatabaseHelper();
 
   @override

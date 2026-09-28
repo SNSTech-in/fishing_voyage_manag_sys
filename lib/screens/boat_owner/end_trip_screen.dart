@@ -6,7 +6,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
-import 'package:fishing_voyage_manag_sys/services/api_services/api_service.dart';
+import 'package:fishing_voyage_manag_sys/services/api_services/boat_owners_api_service.dart';
 import 'package:fishing_voyage_manag_sys/services/background_Services/location_service.dart';
 import 'package:fishing_voyage_manag_sys/database/database_helper.dart';
 
@@ -27,7 +27,7 @@ class EndTripScreen extends StatefulWidget {
 }
 
 class _EndTripScreenState extends State<EndTripScreen> {
-  final ApiService _apiService = ApiService();
+  final BoatOwnwesApiService _apiService = BoatOwnwesApiService();
   final DatabaseHelper _db = DatabaseHelper();
   final TextEditingController tripEndRemarksController = TextEditingController();
   String? selectedOfficerId;

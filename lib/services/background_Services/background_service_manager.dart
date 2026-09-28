@@ -2,6 +2,7 @@
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'background_sync_task.dart';
 
 class BackgroundServiceManager {
@@ -24,8 +25,8 @@ class BackgroundServiceManager {
       foregroundTaskOptions: ForegroundTaskOptions(
         // Repeat every 15 minutes even when app is killed
         eventAction: ForegroundTaskEventAction.repeat(15 * 60 * 1000),
-        autoRunOnBoot: true,
-        autoRunOnMyPackageReplaced: true,
+        autoRunOnBoot: false,
+        autoRunOnMyPackageReplaced: false,
         allowWakeLock: true,
         allowWifiLock: true,
       ),
@@ -54,6 +55,13 @@ class BackgroundServiceManager {
       return true;
     }
 
+    // Check location permission before starting service with location type
+    final locationStatus = await Permission.location.status;
+    if (!locationStatus.isGranted) {
+      debugPrint('⚠️ [BG Service] Location permission not granted yet, skipping service start.');
+      return false;
+    }
+
     final result = await FlutterForegroundTask.startService(
       serviceId: 256,
       notificationTitle: 'Fishing Voyage Sync',
@@ -63,14 +71,14 @@ class BackgroundServiceManager {
     );
 
     debugPrint('🟢 [BG Service] Started. Result=$result');
-    return result != null;
+    return result is ServiceRequestSuccess;
   }
 
   /// Stop the background service.
   static Future<bool> stop() async {
     final result = await FlutterForegroundTask.stopService();
     debugPrint('🔴 [BG Service] Stopped. Result=$result');
-    return result != null;
+    return result is ServiceRequestSuccess;
   }
 
   /// Check status.

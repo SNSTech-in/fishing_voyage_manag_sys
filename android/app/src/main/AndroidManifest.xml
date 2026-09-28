@@ -11,7 +11,7 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- Battery optimization -->
-    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
 
     <!-- Boot / wake -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
@@ -22,18 +22,18 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <application
-        android:label="fishing_voyage_manag_sys"
+        android:label="Fishing Voyage"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <service
             android:name="id.flutter.flutter_background_service.BackgroundService"
-            android:foregroundServiceType="location"
+            android:foregroundServiceType="location|dataSync"
             />
 
         <!-- Flutter foreground task service -->
         <service
             android:name="com.pravera.flutter_foreground_task.service.ForegroundService"
-            android:foregroundServiceType="location"
+            android:foregroundServiceType="location|dataSync"
             android:exported="false" />
 
         <!-- Boot receiver: restart the service after reboot -->

@@ -1,131 +1,188 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:flutter/material.dart';
+
+import '../../database/database_helper.dart';
 import 'api_constants.dart';
 
-int intFromMap(Map? m, List<String> keys, {int fallback = 0}) {
-  if (m == null) return fallback;
-  for (final k in keys) {
-    final v = m[k];
-    if (v is int) return v;
-    if (v is num) return v.toInt();
-    if (v is String) {
-      final p = int.tryParse(v);
-      if (p != null) return p;
-    }
-  }
-  return fallback;
-}
-
-class OfficerApiService {
-  final String baseUrl = ApiConstants.baseUrl;
-  final String apiKey = "FBClUvFWPFJBlY4Kw7nX-CGwGhgBMklARi-QqNy3gzg";
+class OfficersApiService {
   final http.Client _client = http.Client();
+  final DatabaseHelper _db = DatabaseHelper();
 
-  // 1. AUTHENTICATION
-  Future<Map<String, dynamic>> loginAdmin(String username, String password) async {
-    try {
-      final response = await _client.post(
-        Uri.parse('$baseUrl/auth/admin/login'),
-        headers: {
-          'X-API-Key': apiKey,
-          'X-Client-Id': 'WEB_ADMIN',
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({'username': username, 'password': password}),
-      );
-      return jsonDecode(response.body);
-    } catch (e) { return {'success': false, 'message': e.toString()}; }
-  }
-
+  // ─────────────────────────────────────────────────────────────
+  // TOKEN
+  // ─────────────────────────────────────────────────────────────
   Future<String?> _getToken() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('access_token')
-          ?? prefs.getString('officer_token')
-          ?? prefs.getString('auth_token')
-          ?? prefs.getString('user_token');
-      if (token != null && token.isNotEmpty) {
-        print('🔑 [Token] Found: ${token.substring(0, 20)}...');
-        return token;
-      }
+      final session = await _db.getOfficerSession();
+      final token = session?['access_token']?.toString();
+      if (token != null && token.isNotEmpty) return token;
     } catch (e) {
-      print('⚠️ [Token] SharedPreferences error: $e');
+      debugPrint('⚠️ [OfficersApiService] token read failed: $e');
     }
-    print('❌ [Token] Not found');
     return null;
   }
 
-  Future<Map<String, String>> _getAdminHeaders() async {
+  Future<Map<String, String>> _headers() async {
     final token = await _getToken();
-    return {
-      'X-API-Key': apiKey,
-      'X-Client-Id': 'WEB_ADMIN',
-      'Authorization': 'Bearer $token',
-      'Content-Type': 'application/json',
-    };
+    return ApiConstants.adminHeaders(token);
   }
 
-  Future<Map<String, String>> _getMobileHeaders() async {
-    final token = await _getToken();
-    return {
-      'X-API-Key': apiKey,
-      'X-Client-Id': 'MOBILE_APP',
-      'Authorization': 'Bearer $token',
-      'Content-Type': 'application/json',
-    };
-  }
-
-  List parseResponse(dynamic response) {
-    if (response == null) return [];
+  // ─────────────────────────────────────────────────────────────
+  // CORE REQUEST HELPERS
+  // ─────────────────────────────────────────────────────────────
+  Future<Map<String, dynamic>> _get(
+      String url, {
+        Map<String, String>? query,
+        Duration timeout = const Duration(seconds: 30),
+      }) async {
     try {
-      if (response is List) return response;
-      if (response is Map) {
-        var data = response['data'];
-        if (data == null) return [];
-        if (data is List) return data;
-        if (data is Map) return data['items'] ?? data['list'] ?? data['data'] ?? [];
+      final uri = Uri.parse(url).replace(queryParameters: query);
+      debugPrint('📡 GET $uri');
+
+      final res =
+      await _client.get(uri, headers: await _headers()).timeout(timeout);
+      debugPrint('📡 ← ${res.statusCode}');
+
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        final decoded = jsonDecode(res.body);
+        if (decoded is Map<String, dynamic>) {
+          decoded['success'] = decoded['success'] ?? true;
+          decoded['statusCode'] = res.statusCode;
+          return decoded;
+        }
+        return {'success': true, 'data': decoded, 'statusCode': res.statusCode};
       }
-    } catch (e) { print("❌ Parsing Error: $e"); }
-    return [];
+      return {
+        'success': false,
+        'message': 'HTTP ${res.statusCode}',
+        'statusCode': res.statusCode,
+      };
+    } catch (e) {
+      debugPrint('❌ GET $url failed: $e');
+      return {'success': false, 'message': 'Network error: $e'};
+    }
   }
 
-  Future<Map<String, dynamic>> _adminRequest(String endpoint, {Map<String, String>? params}) async {
+  Future<Map<String, dynamic>> _post(
+      String url, {
+        Map<String, dynamic>? body,
+        Duration timeout = const Duration(seconds: 30),
+      }) async {
     try {
-      final uri = Uri.parse('$baseUrl$endpoint').replace(queryParameters: params);
-      final response = await _client.get(uri, headers: await _getAdminHeaders());
-      return jsonDecode(response.body);
-    } catch (e) { return {'success': false, 'message': e.toString()}; }
+      debugPrint('📡 POST $url');
+      final res = await _client
+          .post(Uri.parse(url),
+          headers: await _headers(), body: jsonEncode(body ?? {}))
+          .timeout(timeout);
+      debugPrint('📡 ← ${res.statusCode}');
+
+      final decoded =
+      res.body.isEmpty ? <String, dynamic>{} : jsonDecode(res.body);
+      if (decoded is Map<String, dynamic>) {
+        decoded['success'] = res.statusCode >= 200 && res.statusCode < 300;
+        decoded['statusCode'] = res.statusCode;
+        return decoded;
+      }
+      return {
+        'success': res.statusCode >= 200 && res.statusCode < 300,
+        'data': decoded,
+      };
+    } catch (e) {
+      return {'success': false, 'message': 'Network error: $e'};
+    }
   }
 
-  Future<Map<String, dynamic>> _makeRequest(String endpoint, {Map<String, String>? params}) async {
-    try {
-      final uri = Uri.parse('$baseUrl$endpoint').replace(queryParameters: params);
-      final response = await _client.get(uri, headers: await _getMobileHeaders());
-      return jsonDecode(response.body);
-    } catch (e) { return {'success': false, 'message': e.toString()}; }
+  // ─────────────────────────────────────────────────────────────
+  // NORMALIZED LIST EXTRACTOR
+  // ─────────────────────────────────────────────────────────────
+  static List<Map<String, dynamic>> extractList(Map<String, dynamic> res) {
+    final raw = res['data'];
+    List? list;
+    if (raw is List) {
+      list = raw;
+    } else if (raw is Map) {
+      list = (raw['items'] ?? raw['list'] ?? raw['data']) as List?;
+    }
+    if (list == null) return [];
+    return list
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
   }
 
-  // ==========================================
-  // ALL METHODS RESTORED TO MATCH LOGIC FILES
-  // ==========================================
-  Future<Map<String, dynamic>> fetchDashboardStats() async => _adminRequest('/admin/dashboard/summary');
+  static Map<String, int> extractPagination(Map<String, dynamic> res) {
+    final data = res['data'];
+    if (data is Map) {
+      return {
+        'total': _asInt(data['total'] ?? data['count']),
+        'page': _asInt(data['page'] ?? 1),
+        'page_size': _asInt(data['page_size'] ?? data['limit'] ?? 20),
+      };
+    }
+    return {'total': 0, 'page': 1, 'page_size': 20};
+  }
 
-  Future<Map<String, dynamic>> fetchAllVoyages({int page = 1, int limit = 100}) async =>
-      _adminRequest('/admin/voyages', params: {'page': page.toString(), 'page_size': limit.toString()});
+  static int _asInt(dynamic v, {int fallback = 0}) {
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    if (v is String) return int.tryParse(v) ?? fallback;
+    return fallback;
+  }
 
-  Future<Map<String, dynamic>> fetchVoyages({String? search, String? fromDate, String? toDate, String? status, int page = 1, int limit = 20}) async =>
-      _adminRequest('/admin/voyages', params: {
-        if (search != null) 'search': search,
-        if (fromDate != null) 'from_date': fromDate,
-        if (toDate != null) 'to_date': toDate,
-        if (status != null) 'status': status,
-        'page': page.toString(),
-        'page_size': limit.toString(),
+  // ═════════════════════════════════════════════════════════════
+  // 1. AUTH
+  // ═════════════════════════════════════════════════════════════
+  Future<Map<String, dynamic>> login(String username, String password) async {
+    return _post(
+      ApiConstants.adminLogin,
+      body: {'username': username, 'password': password},
+    );
+  }
+
+  // ═════════════════════════════════════════════════════════════
+  // 2. DASHBOARD
+  // ═════════════════════════════════════════════════════════════
+  Future<Map<String, dynamic>> fetchDashboardStats({
+    String? fromDate,
+    String? toDate,
+    int? portId,
+    String? district,
+  }) =>
+      _get(ApiConstants.adminDashboardSummary, query: {
+        if (fromDate != null && fromDate.isNotEmpty) 'from_date': fromDate,
+        if (toDate != null && toDate.isNotEmpty) 'to_date': toDate,
+        if (portId != null) 'port_id': '$portId',
+        if (district != null && district.isNotEmpty) 'district': district,
       });
 
+  // ═════════════════════════════════════════════════════════════
+  // 3. VOYAGES
+  // ═════════════════════════════════════════════════════════════
+  Future<Map<String, dynamic>> fetchVoyages({
+    String? search,
+    String? fromDate,
+    String? toDate,
+    String? status,
+    int page = 1,
+    int limit = 20,
+  }) =>
+      _get(ApiConstants.adminVoyages, query: {
+        if (search != null && search.isNotEmpty) 'search': search,
+        if (fromDate != null) 'from_date': fromDate,
+        if (toDate != null) 'to_date': toDate,
+        if (status != null && status.isNotEmpty) 'status': status,
+        'page': '$page',
+        'page_size': '$limit',
+      });
+
+  Future<Map<String, dynamic>> fetchVoyageDetails(int intimationId) =>
+      _get(ApiConstants.adminVoyageDetails(intimationId));
+
+  // ═════════════════════════════════════════════════════════════
+  // 4. SOS
+  // ═════════════════════════════════════════════════════════════
   Future<Map<String, dynamic>> fetchSos({
     String? search,
     String? fromDate,
@@ -134,49 +191,41 @@ class OfficerApiService {
     String? severity,
     int page = 1,
     int limit = 20,
-  }) async {
-    final token = await _getToken();
+  }) =>
+      _get(ApiConstants.adminSos, query: {
+        if (search != null && search.isNotEmpty) 'search': search,
+        if (fromDate != null) 'from_date': fromDate,
+        if (toDate != null) 'to_date': toDate,
+        if (status != null && status.isNotEmpty) 'status': status,
+        if (severity != null && severity.isNotEmpty) 'severity': severity,
+        'page': '$page',
+        'page_size': '$limit',
+        '_ts': '${DateTime.now().millisecondsSinceEpoch}',
+      });
 
-    final params = {
-      if (search != null && search.isNotEmpty) 'search': search,
-      if (fromDate != null) 'from_date': fromDate,
-      if (toDate != null) 'to_date': toDate,
-      if (status != null && status.isNotEmpty) 'status': status,
-      if (severity != null && severity.isNotEmpty) 'severity': severity,
-      'page': page.toString(),
-      'page_size': limit.toString(),
-      '_ts': DateTime.now().millisecondsSinceEpoch.toString(), // cache-buster
-    };
+  Future<Map<String, dynamic>> fetchSosReport({
+    String? fromDate,
+    String? toDate,
+    String? status,
+    int page = 1,
+    int limit = 20,
+  }) =>
+      _get(ApiConstants.adminReportSos, query: {
+        if (fromDate != null) 'from_date': fromDate,
+        if (toDate != null) 'to_date': toDate,
+        if (status != null && status.isNotEmpty) 'status': status,
+        'page': '$page',
+        'page_size': '$limit',
+      });
 
-    final uri = Uri.parse('$baseUrl/sos')
-        .replace(queryParameters: params);
-
-    print('📡 [fetchSos] URL: $uri');
-
-    try {
-      final response = await _client.get(
-        uri,
-        headers: {
-          'x-api-key': apiKey,
-          'x-client-id': 'WEB_ADMIN',
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-      ).timeout(const Duration(seconds: 30));
-
-      print('📡 [fetchSos] Status: ${response.statusCode}');
-      print('📄 [fetchSos] Body: ${response.body}');
-
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body);
-      }
-      return {'success': false, 'message': 'HTTP ${response.statusCode}'};
-    } catch (e) {
-      print('❌ [fetchSos] Exception: $e');
-      return {'success': false, 'message': 'Network error: $e'};
-    }
+  Future<bool> postSos(Map<String, dynamic> payload) async {
+    final res = await _post(ApiConstants.adminSos, body: payload);
+    return res['success'] == true;
   }
 
+  // ═════════════════════════════════════════════════════════════
+  // 5. CITINGS
+  // ═════════════════════════════════════════════════════════════
   Future<Map<String, dynamic>> fetchCitings({
     String? search,
     String? fromDate,
@@ -187,96 +236,47 @@ class OfficerApiService {
     String? severity,
     int page = 1,
     int limit = 20,
-  }) async {
-    final token = await _getToken();
+  }) =>
+      _get(ApiConstants.adminCitings, query: {
+        if (search != null && search.isNotEmpty) 'search': search,
+        if (fromDate != null) 'from_date': fromDate,
+        if (toDate != null) 'to_date': toDate,
+        if (type != null && type.isNotEmpty) 'type': type,
+        if (activity != null && activity.isNotEmpty) 'activity': activity,
+        if (status != null && status.isNotEmpty) 'status': status,
+        if (severity != null && severity.isNotEmpty) 'severity': severity,
+        'page': '$page',
+        'page_size': '$limit',
+        '_ts': '${DateTime.now().millisecondsSinceEpoch}',
+      });
 
-    final params = {
-      if (search != null && search.isNotEmpty) 'search': search,
-      if (fromDate != null) 'from_date': fromDate,
-      if (toDate != null) 'to_date': toDate,
-      if (type != null && type.isNotEmpty) 'type': type,
-      if (activity != null && activity.isNotEmpty) 'activity': activity,
-      if (status != null && status.isNotEmpty) 'status': status,
-      if (severity != null && severity.isNotEmpty) 'severity': severity,
-      'page': page.toString(),
-      'page_size': limit.toString(),
-      '_ts': DateTime.now().millisecondsSinceEpoch.toString(), // cache-buster
-    };
+  /// ⭐ Fetch ONE citing's full detail.
+  /// Endpoint: GET /citings/{citingId}
+  Future<Map<String, dynamic>> fetchCitingDetails(int citingId) =>
+      _get(ApiConstants.adminCitingDetails(citingId));
 
-    final uri = Uri.parse('$baseUrl/citings')
-        .replace(queryParameters: params);
-
-    print('📡 [fetchCitings] URL: $uri');
-
-    try {
-      final response = await _client.get(
-        uri,
-        headers: {
-          'x-api-key': apiKey,
-          'x-client-id': 'WEB_ADMIN',
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-      ).timeout(const Duration(seconds: 30));
-
-      print('📡 [fetchCitings] Status: ${response.statusCode}');
-      print('📄 [fetchCitings] Body: ${response.body}');
-
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body);
-      }
-      return {'success': false, 'message': 'HTTP ${response.statusCode}'};
-    } catch (e) {
-      print('❌ [fetchCitings] Exception: $e');
-      return {'success': false, 'message': 'Network error: $e'};
-    }
+  Future<bool> postCiting(Map<String, dynamic> payload) async {
+    final res = await _post(ApiConstants.adminCitings, body: payload);
+    return res['success'] == true;
   }
 
+  // ═════════════════════════════════════════════════════════════
+  // 6. REPORTS
+  // ═════════════════════════════════════════════════════════════
   Future<Map<String, dynamic>> fetchFishCatchReport({
     String? fromDate,
     String? toDate,
     String? groupBy,
     int page = 1,
     int limit = 20,
-  }) async {
-    final token = await _getToken();
-
-    final params = {
-      if (fromDate != null) 'from_date': fromDate,
-      if (toDate != null) 'to_date': toDate,
-      if (groupBy != null && groupBy.isNotEmpty) 'group_by': groupBy,
-      'page': page.toString(),
-      'page_size': limit.toString(),
-    };
-
-    final uri = Uri.parse('$baseUrl/admin/reports/fish-catch')
-        .replace(queryParameters: params);
-
-    print('📡 [fetchFishCatchReport] URL: $uri');
-
-    try {
-      final response = await _client.get(
-        uri,
-        headers: {
-          'x-api-key': apiKey,
-          'x-client-id': 'WEB_ADMIN',
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-      ).timeout(const Duration(seconds: 30));
-
-      print('📡 [fetchFishCatchReport] Status: ${response.statusCode}');
-      print('📄 [fetchFishCatchReport] Body: ${response.body}');
-
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body);
-      }
-      return {'success': false, 'message': 'HTTP ${response.statusCode}'};
-    } catch (e) {
-      print('❌ [fetchFishCatchReport] Exception: $e');
-      return {'success': false, 'message': 'Network error: $e'};
-    }
-  }
+  }) =>
+      _get(ApiConstants.adminReportFishCatch, query: {
+        if (fromDate != null) 'from_date': fromDate,
+        if (toDate != null) 'to_date': toDate,
+        if (groupBy != null && groupBy.isNotEmpty) 'group_by': groupBy,
+        'page': '$page',
+        'page_size': '$limit',
+      });
 
   Future<Map<String, dynamic>> fetchCrewNotReturned({
     String? fromDate,
@@ -284,45 +284,14 @@ class OfficerApiService {
     String? search,
     int page = 1,
     int limit = 20,
-  }) async {
-    final token = await _getToken();
-
-    final params = {
-      if (fromDate != null) 'from_date': fromDate,
-      if (toDate != null) 'to_date': toDate,
-      if (search != null && search.isNotEmpty) 'search': search,
-      'page': page.toString(),
-      'page_size': limit.toString(),
-    };
-
-    final uri = Uri.parse('$baseUrl/admin/reports/crew-not-returned')
-        .replace(queryParameters: params);
-
-    print('📡 [fetchCrewNotReturned] URL: $uri');
-
-    try {
-      final response = await _client.get(
-        uri,
-        headers: {
-          'x-api-key': apiKey,
-          'x-client-id': 'WEB_ADMIN',
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-      ).timeout(const Duration(seconds: 30));
-
-      print('📡 [fetchCrewNotReturned] Status: ${response.statusCode}');
-      print('📄 [fetchCrewNotReturned] Body: ${response.body}');
-
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body);
-      }
-      return {'success': false, 'message': 'HTTP ${response.statusCode}'};
-    } catch (e) {
-      print('❌ [fetchCrewNotReturned] Exception: $e');
-      return {'success': false, 'message': 'Network error: $e'};
-    }
-  }
+  }) =>
+      _get(ApiConstants.adminReportCrewNotReturned, query: {
+        if (fromDate != null) 'from_date': fromDate,
+        if (toDate != null) 'to_date': toDate,
+        if (search != null && search.isNotEmpty) 'search': search,
+        'page': '$page',
+        'page_size': '$limit',
+      });
 
   Future<Map<String, dynamic>> fetchBoatActivity({
     String? fromDate,
@@ -330,138 +299,33 @@ class OfficerApiService {
     String? boat,
     int page = 1,
     int limit = 20,
-  }) async {
-    final token = await _getToken();
+  }) =>
+      _get(ApiConstants.adminReportBoatActivity, query: {
+        if (fromDate != null) 'from_date': fromDate,
+        if (toDate != null) 'to_date': toDate,
+        if (boat != null && boat.isNotEmpty) 'boat': boat,
+        'page': '$page',
+        'page_size': '$limit',
+      });
 
-    final params = {
-      if (fromDate != null) 'from_date': fromDate,
-      if (toDate != null) 'to_date': toDate,
-      if (boat != null && boat.isNotEmpty) 'boat': boat,
-      'page': page.toString(),
-      'page_size': limit.toString(),
-    };
-
-    final uri = Uri.parse('$baseUrl/admin/reports/boat-activity')
-        .replace(queryParameters: params);
-
-    print('📡 [fetchBoatActivity] URL: $uri');
-
-    try {
-      final response = await _client.get(
-        uri,
-        headers: {
-          'x-api-key': apiKey,
-          'x-client-id': 'WEB_ADMIN',
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-      ).timeout(const Duration(seconds: 30));
-
-      print('📡 [fetchBoatActivity] Status: ${response.statusCode}');
-      print('📄 [fetchBoatActivity] Body: ${response.body}');
-
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body);
-      }
-      return {'success': false, 'message': 'HTTP ${response.statusCode}'};
-    } catch (e) {
-      print('❌ [fetchBoatActivity] Exception: $e');
-      return {'success': false, 'message': 'Network error: $e'};
-    }
-  }
-
-  Future<Map<String, dynamic>> fetchSosReport({
-    String? fromDate,
-    String? toDate,
-    String? status,
-    int page = 1,
-    int limit = 20,
-  }) async {
-    final token = await _getToken();
-
-    final params = {
-      if (fromDate != null) 'from_date': fromDate,
-      if (toDate != null) 'to_date': toDate,
-      if (status != null && status.isNotEmpty) 'status': status,
-      'page': page.toString(),
-      'page_size': limit.toString(),
-    };
-
-    final uri = Uri.parse('$baseUrl/admin/reports/sos')
-        .replace(queryParameters: params);
-
-    print('📡 [fetchSosReport] URL: $uri');
-
-    try {
-      final response = await _client.get(
-        uri,
-        headers: {
-          'x-api-key': apiKey,
-          'x-client-id': 'WEB_ADMIN',
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-      ).timeout(const Duration(seconds: 30));
-
-      print('📡 [fetchSosReport] Status: ${response.statusCode}');
-      print('📄 [fetchSosReport] Body: ${response.body}');
-
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body);
-      }
-      return {'success': false, 'message': 'HTTP ${response.statusCode}'};
-    } catch (e) {
-      print('❌ [fetchSosReport] Exception: $e');
-      return {'success': false, 'message': 'Network error: $e'};
-    }
-  }
-
+  // ═════════════════════════════════════════════════════════════
+  // 7. MASTERS
+  // ═════════════════════════════════════════════════════════════
   Future<Map<String, dynamic>> fetchPorts({
     String? search,
     String? state,
     bool? active,
     int page = 1,
     int limit = 20,
-  }) async {
-    final token = await _getToken();
-
-    final params = {
-      if (search != null && search.isNotEmpty) 'search': search,
-      if (state != null && state.isNotEmpty) 'state': state,
-      if (active != null) 'active': active.toString(),
-      'include_inactive': 'true',
-      'page': page.toString(),
-      'page_size': limit.toString(),
-    };
-
-    final uri = Uri.parse('$baseUrl/masters/ports')
-        .replace(queryParameters: params);
-
-    print('📡 [fetchPorts] URL: $uri');
-
-    try {
-      final response = await _client.get(
-        uri,
-        headers: {
-          'x-api-key': apiKey,
-          'x-client-id': 'WEB_ADMIN',
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-      ).timeout(const Duration(seconds: 30));
-
-      print('📡 [fetchPorts] Status: ${response.statusCode}');
-      print('📄 [fetchPorts] Body: ${response.body}');
-
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body);
-      }
-      return {'success': false, 'message': 'HTTP ${response.statusCode}'};
-    } catch (e) {
-      print('❌ [fetchPorts] Exception: $e');
-      return {'success': false, 'message': 'Network error: $e'};
-    }
-  }
+  }) =>
+      _get(ApiConstants.ports, query: {
+        if (search != null && search.isNotEmpty) 'search': search,
+        if (state != null && state.isNotEmpty) 'state': state,
+        if (active != null) 'active': '$active',
+        'include_inactive': 'true',
+        'page': '$page',
+        'page_size': '$limit',
+      });
 
   Future<Map<String, dynamic>> fetchSpecies({
     String? search,
@@ -469,46 +333,15 @@ class OfficerApiService {
     bool? active,
     int page = 1,
     int limit = 20,
-  }) async {
-    final token = await _getToken();
-
-    final params = {
-      if (search != null && search.isNotEmpty) 'search': search,
-      if (banned != null) 'banned': banned.toString(),
-      if (active != null) 'active': active.toString(),
-      'include_banned': 'true',   // 👈 always fetch banned species too
-      'page': page.toString(),
-      'page_size': limit.toString(),
-    };
-
-    final uri = Uri.parse('$baseUrl/masters/fish-species')
-        .replace(queryParameters: params);
-
-    print('📡 [fetchSpecies] URL: $uri');
-
-    try {
-      final response = await _client.get(
-        uri,
-        headers: {
-          'x-api-key': apiKey,
-          'x-client-id': 'WEB_ADMIN',
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-      ).timeout(const Duration(seconds: 30));
-
-      print('📡 [fetchSpecies] Status: ${response.statusCode}');
-      print('📄 [fetchSpecies] Body: ${response.body}');
-
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body);
-      }
-      return {'success': false, 'message': 'HTTP ${response.statusCode}'};
-    } catch (e) {
-      print('❌ [fetchSpecies] Exception: $e');
-      return {'success': false, 'message': 'Network error: $e'};
-    }
-  }
+  }) =>
+      _get(ApiConstants.fishSpecies, query: {
+        if (search != null && search.isNotEmpty) 'search': search,
+        if (banned != null) 'banned': '$banned',
+        if (active != null) 'active': '$active',
+        'include_banned': 'true',
+        'page': '$page',
+        'page_size': '$limit',
+      });
 
   Future<Map<String, dynamic>> fetchOfficers({
     String? search,
@@ -516,83 +349,31 @@ class OfficerApiService {
     bool? active,
     int page = 1,
     int limit = 20,
-  }) async {
-    final token = await _getToken();
+  }) =>
+      _get(ApiConstants.officers, query: {
+        if (search != null && search.isNotEmpty) 'search': search,
+        if (department != null && department.isNotEmpty) 'department': department,
+        if (active != null) 'active': '$active',
+        'page': '$page',
+        'page_size': '$limit',
+      });
 
-    final params = {
-      if (search != null && search.isNotEmpty) 'search': search,
-      if (department != null && department.isNotEmpty) 'department': department,
-      if (active != null) 'active': active.toString(),
-      'page': page.toString(),
-      'page_size': limit.toString(),
-    };
-
-    final uri = Uri.parse('$baseUrl/masters/officers')
-        .replace(queryParameters: params);
-
-    print('📡 [fetchOfficers] URL: $uri');
-
-    try {
-      final response = await _client.get(
-        uri,
-        headers: {
-          'x-api-key': apiKey,
-          'x-client-id': 'WEB_ADMIN',
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-      ).timeout(const Duration(seconds: 30));
-
-      print('📡 [fetchOfficers] Status: ${response.statusCode}');
-      print('📄 [fetchOfficers] Body: ${response.body}');
-
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body);
-      }
-      return {'success': false, 'message': 'HTTP ${response.statusCode}'};
-    } catch (e) {
-      print('❌ [fetchOfficers] Exception: $e');
-      return {'success': false, 'message': 'Network error: $e'};
-    }
-  }
-
+  // ═════════════════════════════════════════════════════════════
+  // 8. VOYAGE ROUTE
+  // ═════════════════════════════════════════════════════════════
   Future<List<LatLng>> fetchVoyageRoute(int intimationId) async {
-    final token = await _getToken();
-    if (token == null) return [];
-
-    final headers = {
-      'X-API-Key': apiKey,
-      'Authorization': 'Bearer $token',
-      'Content-Type': 'application/json',
-    };
-
-    // Try these paths — first one that returns data wins
     final paths = [
-      '/intimations/$intimationId/pings',
-      '/voyages/$intimationId/pings',
-      '/pings?intimation_id=$intimationId',
+      ApiConstants.voyagePings(intimationId),
+      ApiConstants.voyagePingsAlt(intimationId),
+      ApiConstants.pingsQuery(intimationId),
     ];
 
     for (final path in paths) {
       try {
-        final uri = Uri.parse('$baseUrl$path');
-        debugPrint('🗺️ [Route] trying $uri');
+        final res = await _get(path, timeout: const Duration(seconds: 20));
+        if (res['success'] != true) continue;
 
-        final res = await _client
-            .get(uri, headers: headers)
-            .timeout(const Duration(seconds: 20));
-
-        debugPrint('🗺️ [Route] status ${res.statusCode}');
-        if (res.statusCode != 200) continue;
-
-        final data = jsonDecode(res.body);
-        if (data['success'] != true) continue;
-
-        final items = (data['data']?['items'] ??
-            data['data']?['pings'] ??
-            data['data'] ??
-            []) as List;
-
+        final items = extractList(res);
         final pts = <LatLng>[];
         for (final p in items) {
           final lat = (p['latitude'] as num?)?.toDouble();
@@ -601,43 +382,38 @@ class OfficerApiService {
             pts.add(LatLng(lat, lng));
           }
         }
-
-        debugPrint('🗺️ [Route] parsed ${pts.length} points');
         if (pts.isNotEmpty) return pts;
       } catch (e) {
-        debugPrint('🗺️ [Route] $path failed: $e');
+        debugPrint('🗺️ route try $path failed: $e');
       }
     }
     return [];
   }
 
-  // --- POST METHODS FOR SYNC SERVICE ---
+  /// ⭐ Fetch ONE SOS's full detail.
+  /// Endpoint: GET /sos/{sosId}
+  Future<Map<String, dynamic>> fetchSosDetails(int sosId) =>
+      _get(ApiConstants.adminSosDetails(sosId));
 
-  Future<bool> postSos(Map<String, dynamic> payload) async {
-    try {
-      final response = await _client.post(
-        Uri.parse('$baseUrl/sos'),
-        headers: await _getAdminHeaders(),
-        body: jsonEncode(payload),
-      );
-      return response.statusCode >= 200 && response.statusCode < 300;
-    } catch (e) {
-      debugPrint('❌ postSos error: $e');
-      return false;
-    }
-  }
-
-  Future<bool> postCiting(Map<String, dynamic> payload) async {
-    try {
-      final response = await _client.post(
-        Uri.parse('$baseUrl/citings'),
-        headers: await _getAdminHeaders(),
-        body: jsonEncode(payload),
-      );
-      return response.statusCode >= 200 && response.statusCode < 300;
-    } catch (e) {
-      debugPrint('❌ postCiting error: $e');
-      return false;
-    }
-  }
+  // ═════════════════════════════════════════════════════════════
+  // 9. AUDIT LOG
+  // ═════════════════════════════════════════════════════════════
+  Future<Map<String, dynamic>> fetchAuditLog({
+    int page = 1,
+    int limit = 20,
+    String? tableName,
+    String? actionType,
+    String? fromDate,
+    String? toDate,
+  }) =>
+      _get(ApiConstants.auditLog, query: {
+        'page': '$page',
+        'page_size': '$limit',
+        if (tableName != null && tableName.isNotEmpty)
+          'table_name': tableName,
+        if (actionType != null && actionType.isNotEmpty)
+          'action_type': actionType,
+        if (fromDate != null && fromDate.isNotEmpty) 'from_date': fromDate,
+        if (toDate != null && toDate.isNotEmpty) 'to_date': toDate,
+      });
 }

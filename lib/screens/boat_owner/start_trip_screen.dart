@@ -5,7 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
-import 'package:fishing_voyage_manag_sys/services/api_services/api_service.dart';
+import 'package:fishing_voyage_manag_sys/services/api_services/boat_owners_api_service.dart';
 import 'package:fishing_voyage_manag_sys/services/background_Services/location_service.dart';
 import 'package:fishing_voyage_manag_sys/database/database_helper.dart';
 import 'package:fishing_voyage_manag_sys/main.dart';
@@ -27,7 +27,7 @@ class StartTripScreen extends StatefulWidget {
 }
 
 class _StartTripScreenState extends State<StartTripScreen> {
-  final ApiService _apiService = ApiService();
+  final BoatOwnwesApiService _apiService = BoatOwnwesApiService();
   final DatabaseHelper _db = DatabaseHelper();
   final TextEditingController remarksController = TextEditingController();
 

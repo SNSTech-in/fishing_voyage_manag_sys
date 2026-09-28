@@ -1,6 +1,6 @@
 import 'dart:convert';
+import 'package:fishing_voyage_manag_sys/services/api_services/officer_api_service.dart';
 import 'package:flutter/foundation.dart';
-import '../api_services/officer_api_service.dart';
 import 'offline_queue_service.dart';
 import '../../database/local_db.dart';
 
@@ -8,7 +8,7 @@ class OfficerSyncService {
   OfficerSyncService._();
   static final OfficerSyncService instance = OfficerSyncService._();
 
-  final _api = OfficerApiService();
+  final _api = OfficersApiService();
   bool _syncing = false;
 
   /// Call once at app startup. It reacts whenever connectivity returns.

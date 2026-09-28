@@ -3,7 +3,7 @@
 import 'package:flutter/material.dart';
 
 import '../../database/database_helper.dart';
-import '../../services/api_services/api_service.dart';
+import '../../services/api_services/boat_owners_api_service.dart';
 import 'boat_selection_screen.dart';
 
 class BoatOwnerDetailsScreen extends StatefulWidget {
@@ -30,7 +30,7 @@ class _BoatOwnerDetailsScreenState extends State<BoatOwnerDetailsScreen> {
   List<Map<String, dynamic>> ports = [];
   List<Map<String, dynamic>> filteredPorts = [];
 
-  final ApiService _apiService = ApiService();
+  final BoatOwnwesApiService _apiService = BoatOwnwesApiService();
   final DatabaseHelper _db = DatabaseHelper();
 
   @override

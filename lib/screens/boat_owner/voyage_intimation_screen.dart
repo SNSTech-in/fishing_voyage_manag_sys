@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../database/database_helper.dart';
-import '../../services/api_services/api_service.dart';
+import '../../services/api_services/boat_owners_api_service.dart';
 import 'add_crew_screen.dart';
 
 class VoyageIntimationScreen extends StatefulWidget {
@@ -15,7 +15,7 @@ class VoyageIntimationScreen extends StatefulWidget {
 class _VoyageIntimationScreenState extends State<VoyageIntimationScreen> {
   final _formKey = GlobalKey<FormState>();
 
-  final ApiService _apiService = ApiService();
+  final BoatOwnwesApiService _apiService = BoatOwnwesApiService();
   final DatabaseHelper _db = DatabaseHelper();
 
   // ================================================================

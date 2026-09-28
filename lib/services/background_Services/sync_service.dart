@@ -6,7 +6,7 @@ import 'package:device_info_plus/device_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../database/database_helper.dart';
-import '../api_services/api_service.dart';
+import '../api_services/boat_owners_api_service.dart';
 
 class SyncService {
   static final SyncService instance = SyncService._internal();
@@ -16,7 +16,7 @@ class SyncService {
   static final ValueNotifier<bool> needsRelogin = ValueNotifier(false);
 
   final DatabaseHelper _db = DatabaseHelper();
-  final ApiService _api = ApiService();
+  final BoatOwnwesApiService _api = BoatOwnwesApiService();
 
   // ---- Sync lock with watchdog ------------------------------------------------
   DateTime? _syncStartedAt;

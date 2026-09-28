@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../database/database_helper.dart';
-import '../../services/api_services/api_service.dart';
+import '../../services/api_services/boat_owners_api_service.dart';
 import 'boat_owner_details_screen.dart';
 import 'boat_selection_screen.dart';
 
@@ -25,7 +25,7 @@ class _BoatOwnerLoginScreenState extends State<BoatOwnerLoginScreen> {
   static const Color iconBackground = Color(0xFFE7F3FF);
   static const Color borderColor = Color(0xFFD4DFEE);
 
-  final ApiService _apiService = ApiService();
+  final BoatOwnwesApiService _apiService = BoatOwnwesApiService();
   final DatabaseHelper _db = DatabaseHelper();
 
   @override

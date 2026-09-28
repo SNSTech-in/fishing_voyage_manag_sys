@@ -4,7 +4,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import 'package:flutter/foundation.dart';
 import 'package:fishing_voyage_manag_sys/utiles/ports_utils.dart';
-import 'package:fishing_voyage_manag_sys/services/api_services/api_service.dart';
+import 'package:fishing_voyage_manag_sys/services/api_services/boat_owners_api_service.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper _instance = DatabaseHelper._internal();
@@ -12,7 +12,7 @@ class DatabaseHelper {
   DatabaseHelper._internal();
 
   static Database? _database;
-  static const int _databaseVersion = 40;
+  static const int _databaseVersion = 41;
 
   void resetConnection() {
     try {
@@ -49,6 +49,9 @@ class DatabaseHelper {
 
     // ⭐ ALWAYS ensure these tables exist, regardless of the DB version
     await _ensureQueueTables(_database!);
+
+    // ⭐ ALWAYS ensure officer_session table exists
+    await _ensureOfficerSessionTable(_database!);
 
     return _database!;
   }
@@ -352,6 +355,20 @@ class DatabaseHelper {
       )
     ''');
     await db.insert('active_session', {'id': 1, 'is_logged_in': 0}, conflictAlgorithm: ConflictAlgorithm.ignore);
+
+    // ⭐ OFFICER SESSION (DB-based, replaces SharedPreferences)
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS officer_session (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        officer_id INTEGER,
+        officer_name TEXT,
+        access_token TEXT,
+        refresh_token TEXT,
+        token_type TEXT,
+        expires_in INTEGER,
+        logged_in_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    ''');
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
@@ -721,6 +738,27 @@ class DatabaseHelper {
         print('⚠️ Version 40 migration warning: $e');
       }
     }
+
+    // ⭐ Version 41: Officer session table (DB-based, replaces SharedPreferences)
+    if (oldVersion < 41) {
+      try {
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS officer_session (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            officer_id INTEGER,
+            officer_name TEXT,
+            access_token TEXT,
+            refresh_token TEXT,
+            token_type TEXT,
+            expires_in INTEGER,
+            logged_in_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          )
+        ''');
+        print('✅ Version 41 migration: officer_session table created');
+      } catch (e) {
+        print('⚠️ Version 41 migration warning: $e');
+      }
+    }
   }
 
   Future<void> _ensureTablesExist(Database db) async {
@@ -845,6 +883,20 @@ class DatabaseHelper {
     await db.execute('CREATE TABLE IF NOT EXISTS custom_ports (id INTEGER PRIMARY KEY AUTOINCREMENT, port_name TEXT NOT NULL UNIQUE)');
     // ACTIVE SESSION
     await db.execute('CREATE TABLE IF NOT EXISTS active_session (id INTEGER PRIMARY KEY CHECK (id = 1), is_logged_in INTEGER DEFAULT 0)');
+
+    // ⭐ OFFICER SESSION
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS officer_session (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        officer_id INTEGER,
+        officer_name TEXT,
+        access_token TEXT,
+        refresh_token TEXT,
+        token_type TEXT,
+        expires_in INTEGER,
+        logged_in_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    ''');
   }
 
   /// Idempotent — creates the queue tables if they don't already exist.
@@ -894,6 +946,23 @@ class DatabaseHelper {
     debugPrint('✅ [DB] Queue tables ready');
   }
 
+  /// Idempotent — creates the officer_session table if it doesn't exist.
+  Future<void> _ensureOfficerSessionTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS officer_session (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        officer_id INTEGER,
+        officer_name TEXT,
+        access_token TEXT,
+        refresh_token TEXT,
+        token_type TEXT,
+        expires_in INTEGER,
+        logged_in_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    ''');
+    debugPrint('✅ [DB] Officer session table ready');
+  }
+
   Future<void> _addColumnIfMissing(
       Database db,
       String table,
@@ -906,6 +975,64 @@ class DatabaseHelper {
       await db.execute('ALTER TABLE $table ADD COLUMN $columnDef');
       print('✅ Added column $colName to $table');
     }
+  }
+
+  // ============================================================
+  // OFFICER SESSION METHODS (DB-based, replaces SharedPreferences)
+  // ============================================================
+
+  /// Save officer login (replaces SharedPreferences writes).
+  Future<void> saveOfficerSession({
+    required String accessToken,
+    String? refreshToken,
+    String? tokenType,
+    int? expiresIn,
+    int? officerId,
+    String? officerName,
+  }) async {
+    await runWithRetry((db) async {
+      await _ensureOfficerSessionTable(db);
+
+      await db.delete('officer_session');
+      await db.insert('officer_session', {
+        'id': 1,
+        'officer_id': officerId,
+        'officer_name': officerName,
+        'access_token': accessToken,
+        'refresh_token': refreshToken,
+        'token_type': tokenType,
+        'expires_in': expiresIn,
+        'logged_in_at': DateTime.now().toIso8601String(),
+      });
+      debugPrint('✅ Officer session saved to DB');
+    });
+  }
+
+  /// Returns the officer session row, or null if not logged in.
+  Future<Map<String, dynamic>?> getOfficerSession() async {
+    return await runWithRetry((db) async {
+      await _ensureOfficerSessionTable(db);
+      final result = await db.query('officer_session', limit: 1);
+      if (result.isEmpty) return null;
+      return Map<String, dynamic>.from(result.first);
+    });
+  }
+
+  /// True if an officer is logged in (DB-backed).
+  Future<bool> isOfficerLoggedIn() async {
+    final session = await getOfficerSession();
+    if (session == null) return false;
+    final token = session['access_token'];
+    return token != null && token.toString().isNotEmpty;
+  }
+
+  /// Clear officer session (logout).
+  Future<void> clearOfficerSession() async {
+    await runWithRetry((db) async {
+      await _ensureOfficerSessionTable(db);
+      await db.delete('officer_session');
+      debugPrint('✅ Officer session cleared from DB');
+    });
   }
 
   // ============================================================
@@ -1062,7 +1189,7 @@ class DatabaseHelper {
 
       if (items == null) {
         // Use the robust fetch pattern if no items provided
-        final api = ApiService();
+        final api = BoatOwnwesApiService();
         final List<dynamic> fetched = await api.fetchVoyages(onError: onError);
         if (fetched.isEmpty) {
           debugPrint('⚠️ No voyages to sync (empty list or error).');
@@ -1212,12 +1339,12 @@ class DatabaseHelper {
 
   // ---- TRACKING ----
   Future<int> insertLocation(
-    int voyageId,
-    double latitude,
-    double longitude, {
-    String? voyageNo,
-    String? timestamp,
-  }) async {
+      int voyageId,
+      double latitude,
+      double longitude, {
+        String? voyageNo,
+        String? timestamp,
+      }) async {
     final ts = timestamp ?? DateTime.now().toUtc().toIso8601String();
 
     String? refNo = voyageNo;
@@ -1536,6 +1663,7 @@ class DatabaseHelper {
         await txn.delete('citing_events');
         await txn.delete('sos_queue');
         await txn.delete('citing_queue');
+        await txn.delete('officer_session');
         // Legacy table
         await txn.update('active_session', {'is_logged_in': 0, 'user_id': null, 'phone_number': null}, where: 'id = 1');
       });

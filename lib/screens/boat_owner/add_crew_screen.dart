@@ -1,7 +1,7 @@
 // screens/boat_owner/add_crew_screen.dart
 
 import 'package:flutter/material.dart';
-import '../../services/api_services/api_service.dart';
+import '../../services/api_services/boat_owners_api_service.dart';
 
 class AddCrewScreen extends StatefulWidget {
   const AddCrewScreen({super.key});
@@ -11,7 +11,7 @@ class AddCrewScreen extends StatefulWidget {
 }
 
 class _AddCrewScreenState extends State<AddCrewScreen> {
-  final ApiService _apiService = ApiService();
+  final BoatOwnwesApiService _apiService = BoatOwnwesApiService();
 
   // Crew list from API
   List<Map<String, dynamic>> crewMembers = [];
