@@ -31,6 +31,8 @@ import 'package:fishing_voyage_manag_sys/screens/boat_owner/dashboard_screen.dar
 // FOREGROUND LOCATION TASK
 // ============================================================================
 
+
+
 @pragma('vm:entry-point')
 void startLocationTask() {
   FlutterForegroundTask.setTaskHandler(
