@@ -4,7 +4,6 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:fishing_voyage_manag_sys/database/database_helper.dart';
 import 'package:fishing_voyage_manag_sys/services/background_Services/event_location_service.dart';
@@ -55,9 +54,9 @@ class BackgroundLocationTask extends TaskHandler {
 
     try {
       // --- 1. Active voyage check -----------------------------------------
-      final prefs = await SharedPreferences.getInstance();
-      final voyageId = prefs.getInt('active_voyage_id');
-      final voyageNo = prefs.getString('active_voyage_no') ?? '';
+      final active = await _dbHelper.getActiveVoyage();
+      final voyageId = active?['id'] as int?;
+      final voyageNo = active?['reference_no'] as String? ?? '';
 
       if (voyageId == null) {
         debugPrint('⚠️ [BG] no active voyage – skip');

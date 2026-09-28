@@ -19,6 +19,8 @@ import 'package:fishing_voyage_manag_sys/services/background_Services/location_s
 import 'package:fishing_voyage_manag_sys/services/background_Services/offline_map_service.dart';
 import 'package:fishing_voyage_manag_sys/services/background_Services/sync_service.dart';
 import 'package:fishing_voyage_manag_sys/services/background_Services/offline_queue_service.dart';
+import 'package:fishing_voyage_manag_sys/services/active_voyage_resume_service.dart';
+import 'package:fishing_voyage_manag_sys/services/background_Services/background_service_manager.dart';
 
 import 'boat_selection_screen.dart';
 import 'voyage_intimation_screen.dart';
@@ -124,6 +126,34 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     _initConnectivity();
     _checkAndSyncOnStart();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _tryResumeActiveVoyage();
+    });
+  }
+
+  Future<void> _tryResumeActiveVoyage() async {
+    try {
+      final resumed =
+          await ActiveVoyageResumeService.instance.resumeIfActive();
+      if (resumed == null) return;
+
+      // Restart the background service so pings resume flowing
+      await BackgroundServiceManager.start();
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Resumed tracking for ${resumed['reference_no']}',
+          ),
+          backgroundColor: const Color(0xFF31A24C),
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    } catch (e, st) {
+      debugPrint('🔁 [resume] failed: $e\n$st');
+    }
   }
 
   // ============================================================
@@ -221,7 +251,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
     try {
       final prefs = await SharedPreferences.getInstance();
 
-      final voyageId = prefs.getInt('active_voyage_id');
+      var voyageId = prefs.getInt('active_voyage_id');
+      if (voyageId == null) {
+        final active = await _db.getActiveVoyage();
+        voyageId = active?['id'] as int?;
+      }
 
       if (voyageId != null) {
         final count = await _db.getUnsyncedLocationCount(voyageId);

@@ -21,6 +21,68 @@ class BoatOwnwesApiService {
   }
 
   // ============================================================
+  // 🔍 LOGGING HELPERS
+  // ============================================================
+
+  void _logRequest(String tag, String method, Uri url, Map<String, String> headers, {Object? body}) {
+    debugPrint('┌─── 📤 [$tag] REQUEST ──────────────────────────────');
+    debugPrint('│ $method $url');
+    debugPrint('│ X-Client-Id : ${headers['X-Client-Id'] ?? headers['x-client-id'] ?? '-'}');
+    debugPrint('│ X-API-Key   : ${_mask(headers['X-API-Key'] ?? headers['x-api-key'])}');
+    debugPrint('│ Auth        : ${_maskAuth(headers['Authorization'] ?? headers['authorization'])}');
+    if (body != null) {
+      debugPrint('│ Body        : ${_prettyBody(body)}');
+    }
+    debugPrint('└────────────────────────────────────────────────────');
+  }
+
+  void _logResponse(String tag, http.Response res) {
+    final ok = res.statusCode >= 200 && res.statusCode < 300;
+    debugPrint('┌─── 📥 [$tag] RESPONSE ─────────────────────────────');
+    debugPrint('│ Status      : ${res.statusCode} ${ok ? "✅ OK" : "❌ FAILED"}');
+    debugPrint('│ Body        : ${_preview(res.body)}');
+    debugPrint('└────────────────────────────────────────────────────');
+  }
+
+  void _logError(String tag, Object e, [StackTrace? st]) {
+    debugPrint('┌─── 💥 [$tag] EXCEPTION ────────────────────────────');
+    debugPrint('│ $e');
+    if (st != null) debugPrint('│ $st');
+    debugPrint('└────────────────────────────────────────────────────');
+  }
+
+  void _logSkip(String tag, String reason) {
+    debugPrint('⚠️ [$tag] SKIPPED — $reason');
+  }
+
+  String _mask(String? key) {
+    if (key == null) return '-';
+    if (key.length < 12) return key;
+    return '${key.substring(0, 8)}...${key.substring(key.length - 4)}';
+  }
+
+  String _maskAuth(String? auth) {
+    if (auth == null) return '❌ MISSING';
+    if (auth.length < 20) return auth;
+    return '${auth.substring(0, 17)}...${auth.substring(auth.length - 6)}';
+  }
+
+  String _preview(String body) {
+    if (body.isEmpty) return '(empty)';
+    return body.length > 400 ? '${body.substring(0, 400)}...' : body;
+  }
+
+  String _prettyBody(Object? body) {
+    if (body == null) return 'null';
+    try {
+      final decoded = body is String ? jsonDecode(body) : body;
+      return const JsonEncoder.withIndent('  ').convert(decoded);
+    } catch (_) {
+      return body.toString();
+    }
+  }
+
+  // ============================================================
   // SECURITY & HEADERS
   // ============================================================
 
@@ -37,7 +99,11 @@ class BoatOwnwesApiService {
       String? token = session['access_token'] ?? session['setup_token'];
       if (token != null && token.isNotEmpty) {
         headers['Authorization'] = 'Bearer $token';
+      } else {
+        debugPrint('⚠️ [_getHeadersWithAccessToken] session exists but no token');
       }
+    } else {
+      debugPrint('⚠️ [_getHeadersWithAccessToken] no session in DB');
     }
     return headers;
   }
@@ -76,6 +142,7 @@ class BoatOwnwesApiService {
   // ============================================================
 
   Future<void> _handleTokenExpired() async {
+    debugPrint('🔓 [_handleTokenExpired] clearing session and navigating to login');
     await _db.clearUserSession();
     if (navigatorKey?.currentContext != null) {
       Navigator.pushNamedAndRemoveUntil(
@@ -88,6 +155,7 @@ class BoatOwnwesApiService {
 
   Future<Map<String, dynamic>> _checkResponse(Map<String, dynamic> data) async {
     if (data['success'] == false) {
+      debugPrint('⚠️ [_checkResponse] success=false — error_code=${data['error_code']} message=${data['message']}');
       if (data['error_code'] == 'TOKEN_EXPIRED' ||
           data['error_code'] == 'INVALID_TOKEN') {
         print('⚠️ _checkResponse: Token expired or invalid');
@@ -105,76 +173,87 @@ class BoatOwnwesApiService {
 
   Future<Map<String, dynamic>> sendOtp(String mobileNo) async {
     final body = {'mobile_no': mobileNo};
-    print('📤 [sendOtp] REQUEST: $body');
+    final url = Uri.parse(ApiConstants.sendOtp);
+    _logRequest('sendOtp', 'POST', url, ApiConstants.publicHeaders, body: body);
 
-    final response = await _client.post(
-      Uri.parse(ApiConstants.sendOtp),
-      headers: ApiConstants.publicHeaders,
-      body: jsonEncode(body),
-    ).timeout(const Duration(seconds: 30));
+    try {
+      final response = await _client.post(
+        url,
+        headers: ApiConstants.publicHeaders,
+        body: jsonEncode(body),
+      ).timeout(const Duration(seconds: 30));
 
-    final data = jsonDecode(response.body);
-    print('📥 [sendOtp] RESPONSE: $data');
-
-    return _checkResponse(data);
+      _logResponse('sendOtp', response);
+      final data = jsonDecode(response.body);
+      return _checkResponse(data);
+    } catch (e, st) {
+      _logError('sendOtp', e, st);
+      return {'success': false, 'message': e.toString(), 'error_code': 'NETWORK_ERROR'};
+    }
   }
 
   Future<Map<String, dynamic>> verifyOtp(String mobileNo, String otp) async {
     final body = {'mobile_no': mobileNo, 'otp': otp};
-    print('📤 [verifyOtp] REQUEST: $body');
+    final url = Uri.parse(ApiConstants.verifyOtp);
+    _logRequest('verifyOtp', 'POST', url, ApiConstants.publicHeaders, body: body);
 
-    final response = await _client.post(
-      Uri.parse(ApiConstants.verifyOtp),
-      headers: ApiConstants.publicHeaders,
-      body: jsonEncode(body),
-    ).timeout(const Duration(seconds: 30));
+    try {
+      final response = await _client.post(
+        url,
+        headers: ApiConstants.publicHeaders,
+        body: jsonEncode(body),
+      ).timeout(const Duration(seconds: 30));
 
-    final data = jsonDecode(response.body);
-    print('📥 [verifyOtp] RESPONSE: $data');
+      _logResponse('verifyOtp', response);
+      final data = jsonDecode(response.body);
 
-    if (data['success'] == true && data['data'] != null) {
-      final responseData = data['data'];
-      if (responseData['setup_token'] != null) {
-        print('🔑 verifyOtp: Saving setup_token');
-        await _db.insertUserSession({
-          'mobile_no': mobileNo,
-          'setup_token': responseData['setup_token'],
-          'access_token': null,
-          'refresh_token': null,
-          'token_type': null,
-          'expires_in': responseData['expires_in'],
-          'profile_data': 0,
-          'owner_id': null,
-          'user_name': null,
-          'role': null,
-        });
-      } else if (responseData['access_token'] != null) {
-        print('🔑 verifyOtp: Saving access_token');
-        final token = responseData['access_token'].toString();
-        final refreshToken = responseData['refresh_token']?.toString();
+      if (data['success'] == true && data['data'] != null) {
+        final responseData = data['data'];
+        if (responseData['setup_token'] != null) {
+          print('🔑 verifyOtp: Saving setup_token');
+          await _db.insertUserSession({
+            'mobile_no': mobileNo,
+            'setup_token': responseData['setup_token'],
+            'access_token': null,
+            'refresh_token': null,
+            'token_type': null,
+            'expires_in': responseData['expires_in'],
+            'profile_data': 0,
+            'owner_id': null,
+            'user_name': null,
+            'role': null,
+          });
+        } else if (responseData['access_token'] != null) {
+          print('🔑 verifyOtp: Saving access_token');
+          final token = responseData['access_token'].toString();
+          final refreshToken = responseData['refresh_token']?.toString();
 
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('access_token', token);
-        if (refreshToken != null && refreshToken.isNotEmpty) {
-          await prefs.setString('refresh_token', refreshToken);
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('access_token', token);
+          if (refreshToken != null && refreshToken.isNotEmpty) {
+            await prefs.setString('refresh_token', refreshToken);
+          }
+
+          final user = responseData['user'];
+          await _db.insertUserSession({
+            'mobile_no': user?['mobile_no'] ?? mobileNo,
+            'setup_token': null,
+            'access_token': token,
+            'refresh_token': responseData['refresh_token'],
+            'token_type': responseData['token_type'] ?? 'Bearer',
+            'expires_in': responseData['expires_in'],
+            'profile_data': 1,
+            'owner_id': user?['owner_id'],
+            'user_name': user?['name'],
+            'role': user?['role'],
+          });
         }
-
-        final user = responseData['user'];
-        await _db.insertUserSession({
-          'mobile_no': user?['mobile_no'] ?? mobileNo,
-          'setup_token': null,
-          'access_token': token,
-          'refresh_token': responseData['refresh_token'],
-          'token_type': responseData['token_type'] ?? 'Bearer',
-          'expires_in': responseData['expires_in'],
-          'profile_data': 1,
-          'owner_id': user?['owner_id'],
-          'user_name': user?['name'],
-          'role': user?['role'],
-        });
       }
+      return _checkResponse(data);
+    } catch (e, st) {
+      _logError('verifyOtp', e, st);
+      return {'success': false, 'message': e.toString(), 'error_code': 'NETWORK_ERROR'};
     }
-    return _checkResponse(data);
   }
 
   Future<Map<String, dynamic>> createProfile({
@@ -185,10 +264,10 @@ class BoatOwnwesApiService {
     required String mobileNo,
     required String address,
   }) async {
-    final String url = ApiConstants.createProfile;
-    final Map<String, String> headers = await _getHeadersWithSetupToken();
+    final url = Uri.parse(ApiConstants.createProfile);
+    final headers = await _getHeadersWithSetupToken();
 
-    final Map<String, dynamic> body = {
+    final body = {
       'owner_name': ownerName,
       'aadhaar_no': aadhaarNo,
       'primary_port_id': primaryPortId,
@@ -196,23 +275,16 @@ class BoatOwnwesApiService {
       'address': address,
     };
 
-    print('═══════════════════════════════════════════════════════════');
-    print('📤 [CREATE PROFILE] REQUEST');
-    print('📍 URL: $url');
-    print('📦 Request Body: ${jsonEncode(body)}');
-    print('═══════════════════════════════════════════════════════════');
+    _logRequest('createProfile', 'POST', url, headers, body: body);
 
     try {
       final response = await _client.post(
-        Uri.parse(url),
+        url,
         headers: headers,
         body: jsonEncode(body),
       );
 
-      print('📊 Status Code: ${response.statusCode}');
-      print('📦 Response Body: ${response.body}');
-      print('═══════════════════════════════════════════════════════════\n');
-
+      _logResponse('createProfile', response);
       final data = jsonDecode(response.body);
 
       if (data['success'] == true && data['data'] != null) {
@@ -239,8 +311,8 @@ class BoatOwnwesApiService {
       }
 
       return await _checkResponse(data);
-    } catch (e) {
-      print('❌ [CREATE PROFILE] ERROR: $e');
+    } catch (e, st) {
+      _logError('createProfile', e, st);
       return {
         'success': false,
         'message': 'Failed to create profile: $e',
@@ -255,20 +327,17 @@ class BoatOwnwesApiService {
     final headers = ApiConstants.publicHeaders;
     final body = {'refresh_token': refreshToken};
 
-    debugPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    debugPrint('🔁 [refreshToken] POST $uri');
+    _logRequest('refreshToken', 'POST', uri, headers, body: body);
 
     try {
       final res = await _client
           .post(uri, headers: headers, body: jsonEncode(body))
           .timeout(const Duration(seconds: 15));
 
-      debugPrint('📥 [refreshToken] status=${res.statusCode}');
-      debugPrint('   body      : ${res.body}');
+      _logResponse('refreshToken', res);
 
       if (res.statusCode < 200 || res.statusCode >= 300) {
         debugPrint('❌ [refreshToken] non-2xx — giving up');
-        debugPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         return null;
       }
 
@@ -283,7 +352,6 @@ class BoatOwnwesApiService {
 
       if (newToken == null || newToken.isEmpty) {
         debugPrint('❌ [refreshToken] no access_token in response');
-        debugPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         return null;
       }
 
@@ -307,19 +375,15 @@ class BoatOwnwesApiService {
       }
 
       debugPrint('✅ [refreshToken] new access_token saved');
-      debugPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       return newToken;
     } on TimeoutException {
       debugPrint('❌ [refreshToken] timeout');
-      debugPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       return null;
     } on SocketException catch (e) {
       debugPrint('❌ [refreshToken] network: ${e.message}');
-      debugPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       return null;
-    } catch (e) {
-      debugPrint('❌ [refreshToken] unknown: $e');
-      debugPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    } catch (e, st) {
+      _logError('refreshToken', e, st);
       return null;
     }
   }
@@ -333,7 +397,10 @@ class BoatOwnwesApiService {
       refresh = session?['refresh_token']?.toString();
     }
 
-    if (refresh == null || refresh.isEmpty) return null;
+    if (refresh == null || refresh.isEmpty) {
+      debugPrint('❌ [refreshToken] no refresh token stored anywhere');
+      return null;
+    }
     return await refreshAccessToken(refresh);
   }
 
@@ -343,32 +410,39 @@ class BoatOwnwesApiService {
 
   Future<Map<String, dynamic>> getPorts() async {
     final headers = await _getHeadersWithAccessToken();
-    print('📤 [getPorts] REQUEST');
+    final url = Uri.parse(ApiConstants.ports);
+    _logRequest('getPorts', 'GET', url, headers);
 
-    final response = await _client
-        .get(Uri.parse(ApiConstants.ports), headers: headers)
-        .timeout(const Duration(seconds: 30));
+    try {
+      final response = await _client
+          .get(url, headers: headers)
+          .timeout(const Duration(seconds: 30));
 
-    final data = jsonDecode(response.body);
-    print('📥 [getPorts] RESPONSE: ${data['success'] == true ? 'List of ${data['data']?.length} ports' : data}');
-
-    return _checkResponse(data);
+      _logResponse('getPorts', response);
+      final data = jsonDecode(response.body);
+      return _checkResponse(data);
+    } catch (e, st) {
+      _logError('getPorts', e, st);
+      return {'success': false, 'message': e.toString(), 'error_code': 'NETWORK_ERROR'};
+    }
   }
 
   Future<Map<String, dynamic>> getBoats({int page = 1, int pageSize = 20}) async {
     final headers = await _getHeadersWithAccessToken();
-    final url = '${ApiConstants.ownerBoats}?page=$page&page_size=$pageSize';
-    print('📤 [getBoats] REQUEST: $url');
+    final url = Uri.parse('${ApiConstants.ownerBoats}?page=$page&page_size=$pageSize');
+    _logRequest('getBoats', 'GET', url, headers);
 
-    final response = await _client.get(
-      Uri.parse(url),
-      headers: headers,
-    ).timeout(const Duration(seconds: 30));
+    try {
+      final response = await _client.get(url, headers: headers)
+          .timeout(const Duration(seconds: 30));
 
-    final data = jsonDecode(response.body);
-    print('📥 [getBoats] RESPONSE: ${data['success'] == true ? 'List of boats' : data}');
-
-    return _checkResponse(data);
+      _logResponse('getBoats', response);
+      final data = jsonDecode(response.body);
+      return _checkResponse(data);
+    } catch (e, st) {
+      _logError('getBoats', e, st);
+      return {'success': false, 'message': e.toString(), 'error_code': 'NETWORK_ERROR'};
+    }
   }
 
   Future<Map<String, dynamic>> addBoat({
@@ -379,6 +453,7 @@ class BoatOwnwesApiService {
     required String licenceValidUpto,
   }) async {
     final headers = await _getHeadersWithAccessToken();
+    final url = Uri.parse(ApiConstants.ownerBoats);
     final body = {
       'boat_reg_no': boatRegNo,
       'boat_name': boatName,
@@ -386,34 +461,38 @@ class BoatOwnwesApiService {
       'licence_issue_date': licenceIssueDate,
       'licence_valid_upto': licenceValidUpto,
     };
-    print('📤 [addBoat] REQUEST: $body');
 
-    final response = await _client.post(
-      Uri.parse(ApiConstants.ownerBoats),
-      headers: headers,
-      body: jsonEncode(body),
-    ).timeout(const Duration(seconds: 30));
+    _logRequest('addBoat', 'POST', url, headers, body: body);
 
-    final data = jsonDecode(response.body);
-    print('📥 [addBoat] RESPONSE: $data');
+    try {
+      final response = await _client.post(url, headers: headers, body: jsonEncode(body))
+          .timeout(const Duration(seconds: 30));
 
-    return _checkResponse(data);
+      _logResponse('addBoat', response);
+      final data = jsonDecode(response.body);
+      return _checkResponse(data);
+    } catch (e, st) {
+      _logError('addBoat', e, st);
+      return {'success': false, 'message': e.toString(), 'error_code': 'NETWORK_ERROR'};
+    }
   }
 
   Future<Map<String, dynamic>> getCrewList({int page = 1, int pageSize = 20}) async {
     final headers = await _getHeadersWithAccessToken();
-    final url = '${ApiConstants.ownerCrew}?page=$page&page_size=$pageSize';
-    print('📤 [getCrewList] REQUEST: $url');
+    final url = Uri.parse('${ApiConstants.ownerCrew}?page=$page&page_size=$pageSize');
+    _logRequest('getCrewList', 'GET', url, headers);
 
-    final response = await _client.get(
-      Uri.parse(url),
-      headers: headers,
-    ).timeout(const Duration(seconds: 30));
+    try {
+      final response = await _client.get(url, headers: headers)
+          .timeout(const Duration(seconds: 30));
 
-    final data = jsonDecode(response.body);
-    print('📥 [getCrewList] RESPONSE: ${data['success'] == true ? 'List of crew' : data}');
-
-    return _checkResponse(data);
+      _logResponse('getCrewList', response);
+      final data = jsonDecode(response.body);
+      return _checkResponse(data);
+    } catch (e, st) {
+      _logError('getCrewList', e, st);
+      return {'success': false, 'message': e.toString(), 'error_code': 'NETWORK_ERROR'};
+    }
   }
 
   Future<Map<String, dynamic>> addCrew({
@@ -429,10 +508,10 @@ class BoatOwnwesApiService {
     required String emergencyContactNo,
     required String address,
   }) async {
-    final String url = ApiConstants.ownerCrew;
-    final Map<String, String> headers = await _getHeadersWithAccessToken();
+    final url = Uri.parse(ApiConstants.ownerCrew);
+    final headers = await _getHeadersWithAccessToken();
 
-    final Map<String, dynamic> body = {
+    final body = {
       'crew_name': crewName,
       'aadhaar_no': aadhaarNo,
       'nic_ref': nicRef,
@@ -446,27 +525,15 @@ class BoatOwnwesApiService {
       'address_line1': address,
     };
 
-    print('═══════════════════════════════════════════════════════════');
-    print('📤 [ADD CREW] REQUEST');
-    print('📍 URL: $url');
-    print('📦 Request Body: ${jsonEncode(body)}');
-    print('═══════════════════════════════════════════════════════════');
+    _logRequest('addCrew', 'POST', url, headers, body: body);
 
     try {
-      final response = await _client.post(
-        Uri.parse(url),
-        headers: headers,
-        body: jsonEncode(body),
-      );
-
-      print('📊 Status Code: ${response.statusCode}');
-      print('📦 Response Body: ${response.body}');
-      print('═══════════════════════════════════════════════════════════\n');
-
+      final response = await _client.post(url, headers: headers, body: jsonEncode(body));
+      _logResponse('addCrew', response);
       final data = jsonDecode(response.body);
       return await _checkResponse(data);
-    } catch (e) {
-      print('❌ [ADD CREW] ERROR: $e');
+    } catch (e, st) {
+      _logError('addCrew', e, st);
       return {
         'success': false,
         'message': 'Failed to add crew: $e',
@@ -482,18 +549,20 @@ class BoatOwnwesApiService {
 
   Future<Map<String, dynamic>> createIntimation(Map<String, dynamic> body) async {
     final headers = await _getHeadersWithAccessToken();
-    print('📤 [createIntimation] REQUEST: $body');
+    final url = Uri.parse(ApiConstants.intimations);
+    _logRequest('createIntimation', 'POST', url, headers, body: body);
 
-    final response = await _client.post(
-      Uri.parse(ApiConstants.intimations),
-      headers: headers,
-      body: jsonEncode(body),
-    ).timeout(const Duration(seconds: 30));
+    try {
+      final response = await _client.post(url, headers: headers, body: jsonEncode(body))
+          .timeout(const Duration(seconds: 30));
 
-    final data = jsonDecode(response.body);
-    print('📥 [createIntimation] RESPONSE: $data');
-
-    return _checkResponse(data);
+      _logResponse('createIntimation', response);
+      final data = jsonDecode(response.body);
+      return _checkResponse(data);
+    } catch (e, st) {
+      _logError('createIntimation', e, st);
+      return {'success': false, 'message': e.toString(), 'error_code': 'NETWORK_ERROR'};
+    }
   }
 
   Future<Map<String, dynamic>> getIntimations({
@@ -502,38 +571,30 @@ class BoatOwnwesApiService {
     void Function(String errorMessage)? onError,
   }) async {
     final headers = await _getHeadersWithAccessToken();
-    final url = '${ApiConstants.intimations}?page=$page&page_size=$pageSize';
+    final url = Uri.parse('${ApiConstants.intimations}?page=$page&page_size=$pageSize');
 
-    debugPrint('🌐 Fetching voyages from: $url');
+    _logRequest('getIntimations', 'GET', url, headers);
 
     try {
-      final response = await _client.get(
-        Uri.parse(url),
-        headers: headers,
-      ).timeout(const Duration(seconds: 30));
+      final response = await _client.get(url, headers: headers)
+          .timeout(const Duration(seconds: 30));
 
-      debugPrint('📡 Status: ${response.statusCode}');
-      if (response.body.isNotEmpty) {
-        debugPrint('📄 Body preview: ${response.body.substring(0, response.body.length > 200 ? 200 : response.body.length)}...');
-      }
+      _logResponse('getIntimations', response);
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        debugPrint('📥 [getIntimations] RESPONSE: Success (List of intimations)');
         return await _checkResponse(data);
       } else if (response.statusCode == 404) {
-        debugPrint('❌ ERROR 404: Endpoint not found.');
-        debugPrint('   Checked URL: $url');
+        debugPrint('❌ [getIntimations] 404 — endpoint not found: $url');
         _notifyError(onError, 'Endpoint not found (404). Please contact support.');
         return {'success': false, 'message': 'Endpoint not found (404)', 'error_code': 'NOT_FOUND'};
       } else {
-        debugPrint('❌ HTTP Error ${response.statusCode}: ${response.body}');
         _notifyError(onError, 'Server error ${response.statusCode}. Please try again.');
         final data = jsonDecode(response.body);
         return await _checkResponse(data);
       }
-    } catch (e, stack) {
-      debugPrint('❌ Network/Parse error in getIntimations: $e\n$stack');
+    } catch (e, st) {
+      _logError('getIntimations', e, st);
       _notifyError(onError, 'Network error. Please check your connection.');
       return {'success': false, 'message': 'Network error: $e'};
     }
@@ -559,6 +620,7 @@ class BoatOwnwesApiService {
     String? remarks,
   }) async {
     final headers = await _getHeadersWithAccessToken();
+    final url = Uri.parse(ApiConstants.startTrip);
 
     final body = {
       'intimation_id': int.parse(intimationId),
@@ -567,18 +629,20 @@ class BoatOwnwesApiService {
       'longitude': longitude ?? 0.0,
       'remarks': remarks ?? 'Departed on schedule',
     };
-    print('📤 [startVoyage] REQUEST: $body');
 
-    final response = await _client.post(
-      Uri.parse(ApiConstants.startTrip),
-      headers: headers,
-      body: jsonEncode(body),
-    ).timeout(const Duration(seconds: 30));
+    _logRequest('startVoyage', 'POST', url, headers, body: body);
 
-    final data = jsonDecode(response.body);
-    print('📥 [startVoyage] RESPONSE: $data');
+    try {
+      final response = await _client.post(url, headers: headers, body: jsonEncode(body))
+          .timeout(const Duration(seconds: 30));
 
-    return _checkResponse(data);
+      _logResponse('startVoyage', response);
+      final data = jsonDecode(response.body);
+      return _checkResponse(data);
+    } catch (e, st) {
+      _logError('startVoyage', e, st);
+      return {'success': false, 'message': e.toString(), 'error_code': 'NETWORK_ERROR'};
+    }
   }
 
   Future<Map<String, dynamic>> endTrip({
@@ -597,6 +661,8 @@ class BoatOwnwesApiService {
         ? ApiConstants.authHeaders(token)
         : await _getHeadersWithAccessToken();
 
+    final url = Uri.parse(ApiConstants.endTrip);
+
     final body = {
       'intimation_id': intimationId,
       'trip_end_datetime': tripEndDatetime,
@@ -608,18 +674,20 @@ class BoatOwnwesApiService {
       'notified_officer_id': notifiedOfficerId,
     };
     if (tripEndRemarks != null) body['trip_end_remarks'] = tripEndRemarks;
-    print('📤 [endTrip] REQUEST: $body');
 
-    final response = await _client.post(
-      Uri.parse(ApiConstants.endTrip),
-      headers: headers,
-      body: jsonEncode(body),
-    ).timeout(const Duration(seconds: 30));
+    _logRequest('endTrip', 'POST', url, headers, body: body);
 
-    final data = jsonDecode(response.body);
-    print('📥 [endTrip] RESPONSE: $data');
+    try {
+      final response = await _client.post(url, headers: headers, body: jsonEncode(body))
+          .timeout(const Duration(seconds: 30));
 
-    return _checkResponse(data);
+      _logResponse('endTrip', response);
+      final data = jsonDecode(response.body);
+      return _checkResponse(data);
+    } catch (e, st) {
+      _logError('endTrip', e, st);
+      return {'success': false, 'message': e.toString(), 'error_code': 'NETWORK_ERROR'};
+    }
   }
 
   // ============================================================
@@ -642,7 +710,7 @@ class BoatOwnwesApiService {
         : (intimationId?.toString() ?? '');
 
     if (vNo.isEmpty || vNo == 'UNKNOWN') {
-      debugPrint('🚫 [sendPing] skipping — no valid voyage_no');
+      _logSkip('sendPing', 'no valid voyage_no (voyageNo=$voyageNo intimationId=$intimationId)');
       return {
         'success': false,
         'http_status': null,
@@ -667,24 +735,16 @@ class BoatOwnwesApiService {
     };
 
     final headers = ApiConstants.authHeaders(token);
-
     final uri = Uri.parse(ApiConstants.pings);
 
-    debugPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    debugPrint('📤 [sendPing] POST $uri');
-    debugPrint('   voyage_no : $vNo');
-    debugPrint('   device_id : ${body['device_id']}');
-    debugPrint('   ping_dt   : $formatted');
-    debugPrint('   lat/lng   : $latitude, $longitude');
-    debugPrint('   body      : ${jsonEncode(body)}');
+    _logRequest('sendPing', 'POST', uri, headers, body: body);
 
     try {
-      final res = await http
+      final res = await _client
           .post(uri, headers: headers, body: jsonEncode(body))
           .timeout(const Duration(seconds: 20));
 
-      debugPrint('📥 [sendPing] status=${res.statusCode}');
-      debugPrint('   body      : ${res.body}');
+      _logResponse('sendPing', res);
 
       Map<String, dynamic> json = {};
       try {
@@ -695,13 +755,11 @@ class BoatOwnwesApiService {
           res.statusCode < 300 &&
           json['success'] == true) {
         debugPrint('✅ [sendPing] ping_id=${json['data']?['ping_id']}');
-        debugPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         return {'success': true, 'http_status': res.statusCode, ...json};
       }
 
       if (res.statusCode == 401 || res.statusCode == 403) {
         debugPrint('🔒 [sendPing] auth rejected — token invalid/expired');
-        debugPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         return {
           'success': false,
           'http_status': res.statusCode,
@@ -712,9 +770,6 @@ class BoatOwnwesApiService {
 
       if (res.statusCode >= 400 && res.statusCode < 500) {
         debugPrint('❌ [sendPing] client error — payload rejected');
-        debugPrint('   message   : ${json['message']}');
-        debugPrint('   error_code: ${json['error_code']}');
-        debugPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         return {
           'success': false,
           'http_status': res.statusCode,
@@ -725,7 +780,6 @@ class BoatOwnwesApiService {
       }
 
       debugPrint('❌ [sendPing] server error (${res.statusCode})');
-      debugPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       return {
         'success': false,
         'http_status': res.statusCode,
@@ -733,16 +787,13 @@ class BoatOwnwesApiService {
         'message': json['message'] ?? 'server error',
       };
     } on TimeoutException {
-      debugPrint('❌ [sendPing] timeout (20s)');
-      debugPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      _logError('sendPing', 'timeout (20s)');
       return {'success': false, 'http_status': null, 'permanent': false, 'message': 'timeout'};
     } on SocketException catch (e) {
-      debugPrint('❌ [sendPing] network: ${e.message}');
-      debugPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      _logError('sendPing', 'network: ${e.message}');
       return {'success': false, 'http_status': null, 'permanent': false, 'message': 'network: ${e.message}'};
-    } catch (e) {
-      debugPrint('❌ [sendPing] unknown: $e');
-      debugPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    } catch (e, st) {
+      _logError('sendPing', e, st);
       return {'success': false, 'http_status': null, 'permanent': false, 'message': '$e'};
     }
   }
@@ -764,15 +815,8 @@ class BoatOwnwesApiService {
   }) async {
     const validSources = {'GPS', 'NETWORK', 'MANUAL'};
     const validTypes = {
-      'MEDICAL',
-      'ENGINE_FAILURE',
-      'FIRE',
-      'CAPSIZE',
-      'MAN_OVERBOARD',
-      'PIRACY',
-      'WEATHER',
-      'FUEL_SHORTAGE',
-      'OTHER',
+      'MEDICAL','ENGINE_FAILURE','FIRE','CAPSIZE','MAN_OVERBOARD',
+      'PIRACY','WEATHER','FUEL_SHORTAGE','OTHER',
     };
     const validSeverities = {'HIGH', 'MEDIUM', 'LOW'};
 
@@ -792,15 +836,18 @@ class BoatOwnwesApiService {
     };
 
     final url = Uri.parse(ApiConstants.sos);
+    final headers = token.isNotEmpty
+        ? ApiConstants.authHeaders(token)
+        : await _getHeadersWithAccessToken();
+
+    _logRequest('sendSos', 'POST', url, headers, body: payload);
 
     try {
-      final headers = token.isNotEmpty
-          ? ApiConstants.authHeaders(token)
-          : await _getHeadersWithAccessToken();
-
       final res = await _client
           .post(url, headers: headers, body: jsonEncode(payload))
           .timeout(const Duration(seconds: 20));
+
+      _logResponse('sendSos', res);
 
       Map<String, dynamic> json = {};
       try {
@@ -836,10 +883,13 @@ class BoatOwnwesApiService {
         'message': json['message'] ?? 'server error',
       };
     } on TimeoutException {
+      _logError('sendSos', 'timeout');
       return {'success': false, 'http_status': null, 'permanent': false};
-    } on SocketException {
+    } on SocketException catch (e) {
+      _logError('sendSos', 'network: ${e.message}');
       return {'success': false, 'http_status': null, 'permanent': false};
-    } catch (e) {
+    } catch (e, st) {
+      _logError('sendSos', e, st);
       return {
         'success': false,
         'http_status': null,
@@ -888,29 +938,31 @@ class BoatOwnwesApiService {
     String? timestamp,
     String? token,
   }) async {
+    final headers = token != null && token.isNotEmpty
+        ? ApiConstants.authHeaders(token)
+        : await _getHeadersWithAccessToken();
+
+    final url = Uri.parse(ApiConstants.citings);
+
+    final body = {
+      'intimation_id': intimationId,
+      'latitude': latitude,
+      'longitude': longitude,
+      'citing_type': citingType ?? citingReason ?? 'GENERAL',
+      'citing_datetime': timestamp ?? citingDatetime ?? DateTime.now().toIso8601String(),
+    };
+    if (illegalActivityType != null) body['illegal_activity_type'] = illegalActivityType;
+    if (sightedBoatCount != null) body['sighted_boat_count'] = sightedBoatCount;
+    if (remarks != null) body['remarks'] = remarks;
+
+    _logRequest('sendCiting', 'POST', url, headers, body: body);
+
     try {
-      final headers = token != null && token.isNotEmpty
-          ? ApiConstants.authHeaders(token)
-          : await _getHeadersWithAccessToken();
-
-      final body = {
-        'intimation_id': intimationId,
-        'latitude': latitude,
-        'longitude': longitude,
-        'citing_type': citingType ?? citingReason ?? 'GENERAL',
-        'citing_datetime': timestamp ?? citingDatetime ?? DateTime.now().toIso8601String(),
-      };
-      if (illegalActivityType != null) body['illegal_activity_type'] = illegalActivityType;
-      if (sightedBoatCount != null) body['sighted_boat_count'] = sightedBoatCount;
-      if (remarks != null) body['remarks'] = remarks;
-
       final res = await _client
-          .post(
-        Uri.parse(ApiConstants.citings),
-        headers: headers,
-        body: jsonEncode(body),
-      )
+          .post(url, headers: headers, body: jsonEncode(body))
           .timeout(const Duration(seconds: 20));
+
+      _logResponse('sendCiting', res);
 
       Map<String, dynamic> json = {};
       try {
@@ -946,10 +998,13 @@ class BoatOwnwesApiService {
         'message': json['message'] ?? 'server error',
       };
     } on TimeoutException {
+      _logError('sendCiting', 'timeout');
       return {'success': false, 'http_status': null, 'permanent': false};
-    } on SocketException {
+    } on SocketException catch (e) {
+      _logError('sendCiting', 'network: ${e.message}');
       return {'success': false, 'http_status': null, 'permanent': false};
-    } catch (e) {
+    } catch (e, st) {
+      _logError('sendCiting', e, st);
       return {
         'success': false,
         'http_status': null,
@@ -968,51 +1023,38 @@ class BoatOwnwesApiService {
   }) async {
     final headers = await _getHeadersWithAccessToken();
     final url = Uri.parse(ApiConstants.fishSpecies);
-    debugPrint('🌐 Fetching fish species from: $url');
+    _logRequest('getFishSpecies', 'GET', url, headers);
 
     try {
-      final response = await _client.get(
-        url,
-        headers: headers,
-      ).timeout(const Duration(seconds: 30));
+      final response = await _client.get(url, headers: headers)
+          .timeout(const Duration(seconds: 30));
 
-      debugPrint('📡 Status code: ${response.statusCode}');
-      if (response.body.isNotEmpty) {
-        debugPrint('📄 Body (first 500 chars): ${response.body.substring(0, response.body.length > 500 ? 500 : response.body.length)}');
-      }
+      _logResponse('getFishSpecies', response);
 
       if (response.statusCode != 200) {
-        debugPrint('❌ HTTP error ${response.statusCode}: ${response.body}');
         _notifyError(onError, 'Server error ${response.statusCode}.');
         return {'success': false, 'message': 'HTTP error ${response.statusCode}'};
       }
 
       if (response.body.isEmpty) {
-        debugPrint('⚠️ Response body is empty');
         _notifyError(onError, 'Server returned empty data.');
         return {'success': false, 'message': 'Empty response'};
       }
 
       final data = jsonDecode(response.body);
       if (data == null) {
-        debugPrint('⚠️ JSON decoding resulted in null');
         _notifyError(onError, 'Invalid data format from server.');
         return {'success': false, 'message': 'JSON decoding failed'};
       }
 
       if (data is Map<String, dynamic>) {
-        debugPrint('📥 [getFishSpecies] RESPONSE: Success');
-        if (data['data'] != null && data['data'] is List && data['data'].isNotEmpty) {
-          debugPrint('🔍 API Fish Species sample keys: ${data['data'][0].keys}');
-        }
         return await _checkResponse(data);
       } else {
-        debugPrint('⚠️ Response is not a Map, it is: ${data.runtimeType}');
         _notifyError(onError, 'Unexpected data structure.');
         return {'success': false, 'message': 'Invalid response format'};
       }
-    } catch (e, stack) {
-      debugPrint('❌ Network/parse error in getFishSpecies: $e\n$stack');
+    } catch (e, st) {
+      _logError('getFishSpecies', e, st);
       _notifyError(onError, 'Network error. Please check your connection.');
       return {'success': false, 'message': 'Network error: $e'};
     }
@@ -1023,22 +1065,25 @@ class BoatOwnwesApiService {
     required List<Map<String, dynamic>> items,
   }) async {
     final headers = await _getHeadersWithAccessToken();
+    final url = Uri.parse(ApiConstants.fishDetails);
     final body = {
       'intimation_id': intimationId,
       'items': items,
     };
-    print('📤 [saveFishDetails] REQUEST: $body');
 
-    final response = await _client.post(
-      Uri.parse(ApiConstants.fishDetails),
-      headers: headers,
-      body: jsonEncode(body),
-    ).timeout(const Duration(seconds: 30));
+    _logRequest('saveFishDetails', 'POST', url, headers, body: body);
 
-    final data = jsonDecode(response.body);
-    print('📥 [saveFishDetails] RESPONSE: $data');
+    try {
+      final response = await _client.post(url, headers: headers, body: jsonEncode(body))
+          .timeout(const Duration(seconds: 30));
 
-    return _checkResponse(data);
+      _logResponse('saveFishDetails', response);
+      final data = jsonDecode(response.body);
+      return _checkResponse(data);
+    } catch (e, st) {
+      _logError('saveFishDetails', e, st);
+      return {'success': false, 'message': e.toString(), 'error_code': 'NETWORK_ERROR'};
+    }
   }
 
   // ============================================================
@@ -1047,17 +1092,20 @@ class BoatOwnwesApiService {
 
   Future<Map<String, dynamic>> getOfficers() async {
     final headers = await _getHeadersWithAccessToken();
-    print('📤 [getOfficers] REQUEST');
+    final url = Uri.parse(ApiConstants.officers);
+    _logRequest('getOfficers', 'GET', url, headers);
 
-    final response = await _client.get(
-      Uri.parse(ApiConstants.officers),
-      headers: headers,
-    ).timeout(const Duration(seconds: 30));
+    try {
+      final response = await _client.get(url, headers: headers)
+          .timeout(const Duration(seconds: 30));
 
-    final data = jsonDecode(response.body);
-    print('📥 [getOfficers] RESPONSE: ${data['success'] == true ? 'List of ${data['data']?.length} officers' : data}');
-
-    return _checkResponse(data);
+      _logResponse('getOfficers', response);
+      final data = jsonDecode(response.body);
+      return _checkResponse(data);
+    } catch (e, st) {
+      _logError('getOfficers', e, st);
+      return {'success': false, 'message': e.toString(), 'error_code': 'NETWORK_ERROR'};
+    }
   }
 
   Future<Map<String, dynamic>> getIntimationCrew({
@@ -1065,23 +1113,27 @@ class BoatOwnwesApiService {
     required int boatId,
   }) async {
     final headers = await _getHeadersWithAccessToken();
+    final url = Uri.parse(ApiConstants.intimationCrew);
     final body = {
       'intimation_id': intimationId,
       'boat_id': boatId,
     };
-    print('📤 [getIntimationCrew] REQUEST: $body');
 
-    final response = await _client.post(
-      Uri.parse(ApiConstants.intimationCrew),
-      headers: headers,
-      body: jsonEncode(body),
-    ).timeout(const Duration(seconds: 30));
+    _logRequest('getIntimationCrew', 'POST', url, headers, body: body);
 
-    final data = jsonDecode(response.body);
-    print('📥 [getIntimationCrew] RESPONSE: $data');
+    try {
+      final response = await _client.post(url, headers: headers, body: jsonEncode(body))
+          .timeout(const Duration(seconds: 30));
 
-    return _checkResponse(data);
+      _logResponse('getIntimationCrew', response);
+      final data = jsonDecode(response.body);
+      return _checkResponse(data);
+    } catch (e, st) {
+      _logError('getIntimationCrew', e, st);
+      return {'success': false, 'message': e.toString(), 'error_code': 'NETWORK_ERROR'};
+    }
   }
+
   void dispose() {
     _client.close();
   }

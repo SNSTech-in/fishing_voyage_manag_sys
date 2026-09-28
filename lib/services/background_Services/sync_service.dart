@@ -33,6 +33,29 @@ class SyncService {
     return true;
   }
 
+  // ============================================================
+  // 🔍 LOGGING HELPERS
+  // ============================================================
+
+  void _log(String tag, String msg) {
+    debugPrint('[$tag] $msg');
+  }
+
+  void _logBox(String tag, String title, Map<String, dynamic> data) {
+    debugPrint('┌─── $title [$tag] ─────────────────────────────');
+    data.forEach((k, v) {
+      debugPrint('│ $k : $v');
+    });
+    debugPrint('└────────────────────────────────────────────────────');
+  }
+
+  String _maskToken(String? t) {
+    if (t == null) return '❌ null';
+    if (t.isEmpty) return '❌ empty';
+    if (t.length < 20) return t;
+    return '${t.substring(0, 10)}...${t.substring(t.length - 6)}';
+  }
+
   // ---- Token ------------------------------------------------------------------
   Future<String?> _getToken() async {
     try {
@@ -41,7 +64,11 @@ class SyncService {
           prefs.getString('token') ??
           prefs.getString('auth_token') ??
           prefs.getString('user_token');
-      if (token != null && token.isNotEmpty) return token;
+      if (token != null && token.isNotEmpty) {
+        _log('Token', 'found in prefs (${_maskToken(token)})');
+        return token;
+      }
+      _log('Token', 'prefs has no token under known keys');
     } catch (e) {
       debugPrint('⚠️ [Token] prefs failed: $e');
     }
@@ -49,10 +76,15 @@ class SyncService {
     try {
       final session = await _db.getUserSession();
       final token = session?['access_token']?.toString();
-      if (token != null && token.isNotEmpty) return token;
+      if (token != null && token.isNotEmpty) {
+        _log('Token', 'found in DB session (${_maskToken(token)})');
+        return token;
+      }
+      _log('Token', 'DB session has no access_token');
     } catch (e) {
       debugPrint('⚠️ [Token] DB failed: $e');
     }
+    _log('Token', '❌ NOT FOUND anywhere');
     return null;
   }
 
@@ -60,15 +92,18 @@ class SyncService {
   Future<String?> _getRefreshToken() async {
     try {
       final p = await SharedPreferences.getInstance();
-      return p.getString('refresh_token');
-    } catch (_) {
+      final r = p.getString('refresh_token');
+      _log('RefreshToken', r == null ? 'not stored' : 'found (${_maskToken(r)})');
+      return r;
+    } catch (e) {
+      _log('RefreshToken', 'error: $e');
       return null;
     }
   }
 
   /// Attempt to refresh the access token.
-  /// Returns the new token on success, null on failure.
   Future<String?> _tryRefresh() async {
+    _log('refresh', 'attempting token refresh...');
     final refresh = await _getRefreshToken();
     if (refresh == null || refresh.isEmpty) {
       debugPrint('⚠️ [refresh] no refresh_token stored — cannot refresh');
@@ -81,6 +116,7 @@ class SyncService {
       needsRelogin.value = true;
       return null;
     }
+    _log('refresh', '✅ new token (${_maskToken(newToken)})');
     return newToken;
   }
 
@@ -92,16 +128,25 @@ class SyncService {
     }
     _syncStartedAt = DateTime.now();
 
+    debugPrint('┌────────────────────────────────────────────────────');
+    debugPrint('│ 🔄 [syncAll] STARTED @ ${DateTime.now().toIso8601String()}');
+    debugPrint('└────────────────────────────────────────────────────');
+
     try {
       final token = await _getTokenWithRetry();
       if (token == null) {
         debugPrint('⚠️ [syncAll] no token – abort');
         return;
       }
+      debugPrint('✅ [syncAll] using token ${_maskToken(token)}');
 
       await _runStep('syncLocations', () => syncLocations(token));
       await _runStep('syncSos',       () => syncSos(token));
       await _runStep('syncCiting',    () => syncCiting(token));
+
+      debugPrint('┌────────────────────────────────────────────────────');
+      debugPrint('│ ✅ [syncAll] COMPLETED @ ${DateTime.now().toIso8601String()}');
+      debugPrint('└────────────────────────────────────────────────────');
     } catch (e, st) {
       debugPrint('❌ [syncAll] fatal: $e\n$st');
     } finally {
@@ -121,6 +166,7 @@ class SyncService {
     for (var i = 0; i < 3; i++) {
       final t = await _getToken();
       if (t != null && t.isNotEmpty) return t;
+      _log('Token', 'retry ${i + 1}/3 in 500ms');
       await Future.delayed(const Duration(milliseconds: 500));
     }
     return null;
@@ -130,7 +176,10 @@ class SyncService {
   Future<String> _getDeviceId() async {
     final prefs = await SharedPreferences.getInstance();
     final cached = prefs.getString('device_imei');
-    if (cached != null && cached.isNotEmpty) return cached;
+    if (cached != null && cached.isNotEmpty) {
+      _log('DeviceId', 'cached: $cached');
+      return cached;
+    }
 
     String id = 'IMEI-UNKNOWN';
     try {
@@ -142,40 +191,62 @@ class SyncService {
         final i = await info.iosInfo;
         id = 'IMEI-${i.identifierForVendor ?? 'IOS'}';
       }
-    } catch (_) {}
+    } catch (e) {
+      _log('DeviceId', 'error reading device info: $e');
+    }
 
     await prefs.setString('device_imei', id);
+    _log('DeviceId', 'generated & cached: $id');
     return id;
   }
 
   // ---- Locations --------------------------------------------------------------
   Future<void> syncLocations(String token) async {
+    debugPrint('┌─── 🔄 [syncLocations] ─────────────────────────────');
     final pending = await _db.getUnsyncedLocations();
+    debugPrint('│ queue size = ${pending.length}');
+
     if (pending.isEmpty) {
-      debugPrint('✅ [syncLocations] nothing to sync');
+      debugPrint('│ ✅ nothing to sync');
+      debugPrint('└────────────────────────────────────────────────────');
       return;
     }
 
-    debugPrint('🔄 [syncLocations] ${pending.length} pending');
+    debugPrint('│ proceeding to send ${pending.length} row(s)');
+    debugPrint('└────────────────────────────────────────────────────');
 
     final deviceId = await _getDeviceId();
     String currentToken = token;
     int ok = 0, fail = 0, dead = 0;
-    bool refreshed = false;   // only try refreshing ONCE per sync run
+    bool refreshed = false;
 
     for (final loc in pending) {
       final id = loc['id'] as int;
       final voyageNo =
-          (loc['voyage_no'] ?? loc['intimation_id'])?.toString().trim();
+      (loc['voyage_no'] ?? loc['intimation_id'])?.toString().trim();
+
+      _logBox('syncLocations', 'ROW #$id', {
+        'voyage_no': voyageNo ?? 'NULL',
+        'intimation_id': loc['intimation_id'],
+        'lat': loc['latitude'],
+        'lng': loc['longitude'],
+        'ts': loc['timestamp'] ?? loc['ping_date_time'],
+        'synced': loc['synced'],
+      });
+
       if (voyageNo == null || voyageNo.isEmpty || voyageNo == 'UNKNOWN') {
+        debugPrint('🗑️ [syncLocations] DISCARD id=$id — voyage_no="$voyageNo" '
+            'intimation_id=${loc['intimation_id']}');
         await _db.markLocationPermanentlyFailed(id);
         dead++;
         continue;
       }
+
       final ts = (loc['timestamp'] ?? loc['ping_date_time'])?.toString() ??
           DateTime.now().toUtc().toIso8601String();
 
       try {
+        debugPrint('📤 [syncLocations] attempting id=$id voyage=$voyageNo');
         final r = await _api.sendPing(
           voyageNo: voyageNo,
           intimationId: loc['intimation_id'] as int?,
@@ -188,9 +259,11 @@ class SyncService {
           versionNo: '1.4.2',
         );
 
-        // ─────────────────────────────────────────────────────────
-        // 401/403 → try refresh ONCE, then retry the same ping
-        // ─────────────────────────────────────────────────────────
+        debugPrint('📊 [syncLocations] row id=$id result: '
+            'success=${r['success']} http=${r['http_status']} '
+            'permanent=${r['permanent']}');
+
+        // ───── 401/403 → try refresh ONCE, then retry ─────
         if (r['http_status'] == 401 || r['http_status'] == 403) {
           if (refreshed) {
             debugPrint('🔒 [syncLocations] auth failed again after refresh — abort');
@@ -206,7 +279,6 @@ class SyncService {
           refreshed = true;
           debugPrint('✅ [syncLocations] refreshed — retrying same row');
 
-          // Retry this same row once with the new token
           final r2 = await _api.sendPing(
             voyageNo: voyageNo,
             intimationId: loc['intimation_id'] as int?,
@@ -218,45 +290,61 @@ class SyncService {
             pingVia: 'MOBILE_APP',
             versionNo: '1.4.2',
           );
+
+          debugPrint('📊 [syncLocations] retry id=$id result: '
+              'success=${r2['success']} http=${r2['http_status']} '
+              'permanent=${r2['permanent']} msg=${r2['message']}');
+
           if (r2['success'] == true) {
             await _db.markLocationSynced(id);
+            debugPrint('✅ [syncLocations] row id=$id marked synced');
             ok++;
           } else if (r2['permanent'] == true) {
             await _db.markLocationPermanentlyFailed(id);
+            debugPrint('🗑️ [syncLocations] row id=$id marked permanently failed');
             dead++;
           } else {
+            debugPrint('⏸️ [syncLocations] row id=$id left for retry');
             fail++;
           }
           continue;
         }
 
-        // ─────────────────────────────────────────────────────────
-        // Normal outcomes
-        // ─────────────────────────────────────────────────────────
+        // ───── Normal outcomes ─────
         if (r['success'] == true) {
           await _db.markLocationSynced(id);
+          debugPrint('✅ [syncLocations] row id=$id marked synced');
           ok++;
         } else if (r['permanent'] == true) {
           await _db.markLocationPermanentlyFailed(id);
+          debugPrint('🗑️ [syncLocations] row id=$id marked permanently failed — '
+              '${r['message']}');
           dead++;
         } else {
+          debugPrint('⏸️ [syncLocations] row id=$id left for retry — '
+              '${r['message']}');
           fail++;
         }
-      } catch (e) {
+      } catch (e, st) {
         fail++;
-        debugPrint('❌ loc $id: $e');
+        debugPrint('❌ [syncLocations] exception on id=$id: $e\n$st');
       }
 
       if (fail > 0) await Future.delayed(const Duration(milliseconds: 150));
     }
 
-    debugPrint('🏁 [syncLocations] ok=$ok fail=$fail dead=$dead');
+    debugPrint('┌─── 🏁 [syncLocations] SUMMARY ─────────────────────');
+    debugPrint('│ ok=$ok fail=$fail dead=$dead');
+    debugPrint('└────────────────────────────────────────────────────');
   }
 
   // ---- SOS --------------------------------------------------------------------
   Future<void> syncSos(String token) async {
     final unsynced = await _db.getUnsyncedSos();
-    if (unsynced.isEmpty) return;
+    if (unsynced.isEmpty) {
+      debugPrint('✅ [syncSos] nothing to sync');
+      return;
+    }
 
     debugPrint('🔄 [syncSos] ${unsynced.length} pending');
     String currentToken = token;
@@ -268,6 +356,14 @@ class SyncService {
       final ts = (sos['sos_datetime'] ?? sos['timestamp'])?.toString() ??
           DateTime.now().toUtc().toIso8601String();
       final msg = (sos['description'] ?? sos['message'] ?? 'SOS Alert').toString();
+
+      _logBox('syncSos', 'ROW #$id', {
+        'intimation_id': sos['intimation_id'],
+        'lat': sos['latitude'],
+        'lng': sos['longitude'],
+        'severity': sos['severity'],
+        'sos_type': sos['sos_type'],
+      });
 
       try {
         final r = await _api.sendSos(
@@ -282,20 +378,19 @@ class SyncService {
           severity: (sos['severity'] ?? 'HIGH').toString(),
         );
 
+        debugPrint('📊 [syncSos] row id=$id result: '
+            'success=${r['success']} http=${r['http_status']} '
+            'permanent=${r['permanent']} msg=${r['message']}');
+
         if (r['http_status'] == 401 || r['http_status'] == 403) {
           if (refreshed) {
             debugPrint('🔒 [syncSos] auth failed again after refresh — abort');
             break;
           }
-          debugPrint('🔒 [syncSos] 401 — attempting token refresh');
           final newToken = await _tryRefresh();
-          if (newToken == null) {
-            debugPrint('🔒 [syncSos] refresh failed — abort');
-            break;
-          }
+          if (newToken == null) break;
           currentToken = newToken;
           refreshed = true;
-          debugPrint('✅ [syncSos] refreshed — retrying same row');
 
           final r2 = await _api.sendSos(
             intimationId: sos['intimation_id'] ?? 0,
@@ -310,10 +405,12 @@ class SyncService {
           );
           if (r2['success'] == true) {
             await _db.markSosSynced(id);
+            debugPrint('✅ [syncSos] row id=$id marked synced');
             ok++;
           } else if (r2['error_code'] == 'TRIP_ALREADY_ENDED' ||
               r2['permanent'] == true) {
             await _db.markSosPermanentlyFailed(id);
+            debugPrint('🗑️ [syncSos] row id=$id marked permanently failed — ${r2['error_code']}');
             dead++;
           } else {
             fail++;
@@ -323,17 +420,19 @@ class SyncService {
 
         if (r['success'] == true) {
           await _db.markSosSynced(id);
+          debugPrint('✅ [syncSos] row id=$id marked synced');
           ok++;
         } else if (r['error_code'] == 'TRIP_ALREADY_ENDED' ||
             r['permanent'] == true) {
           await _db.markSosPermanentlyFailed(id);
+          debugPrint('🗑️ [syncSos] row id=$id marked permanently failed — ${r['error_code']}');
           dead++;
         } else {
           fail++;
         }
-      } catch (e) {
+      } catch (e, st) {
         fail++;
-        debugPrint('❌ SOS $id: $e');
+        debugPrint('❌ [syncSos] exception on id=$id: $e\n$st');
       }
       if (fail > 0) await Future.delayed(const Duration(milliseconds: 150));
     }
@@ -344,7 +443,10 @@ class SyncService {
   // ---- Citing -----------------------------------------------------------------
   Future<void> syncCiting(String token) async {
     final unsynced = await _db.getUnsyncedCiting();
-    if (unsynced.isEmpty) return;
+    if (unsynced.isEmpty) {
+      debugPrint('✅ [syncCiting] nothing to sync');
+      return;
+    }
 
     debugPrint('🔄 [syncCiting] ${unsynced.length} pending');
     String currentToken = token;
@@ -357,6 +459,13 @@ class SyncService {
           DateTime.now().toUtc().toIso8601String();
       final reason = (c['citing_reason'] ?? c['citing_type'] ?? 'Incident').toString();
 
+      _logBox('syncCiting', 'ROW #$id', {
+        'intimation_id': c['intimation_id'],
+        'lat': c['latitude'],
+        'lng': c['longitude'],
+        'citing_type': c['citing_type'],
+      });
+
       try {
         final r = await _api.sendCiting(
           intimationId: c['intimation_id'] ?? 0,
@@ -367,20 +476,19 @@ class SyncService {
           token: currentToken,
         );
 
+        debugPrint('📊 [syncCiting] row id=$id result: '
+            'success=${r['success']} http=${r['http_status']} '
+            'permanent=${r['permanent']} msg=${r['message']}');
+
         if (r['http_status'] == 401 || r['http_status'] == 403) {
           if (refreshed) {
             debugPrint('🔒 [syncCiting] auth failed again after refresh — abort');
             break;
           }
-          debugPrint('🔒 [syncCiting] 401 — attempting token refresh');
           final newToken = await _tryRefresh();
-          if (newToken == null) {
-            debugPrint('🔒 [syncCiting] refresh failed — abort');
-            break;
-          }
+          if (newToken == null) break;
           currentToken = newToken;
           refreshed = true;
-          debugPrint('✅ [syncCiting] refreshed — retrying same row');
 
           final r2 = await _api.sendCiting(
             intimationId: c['intimation_id'] ?? 0,
@@ -392,9 +500,11 @@ class SyncService {
           );
           if (r2['success'] == true) {
             await _db.markCitingSynced(id);
+            debugPrint('✅ [syncCiting] row id=$id marked synced');
             ok++;
           } else if (r2['permanent'] == true) {
             await _db.markCitingPermanentlyFailed(id);
+            debugPrint('🗑️ [syncCiting] row id=$id marked permanently failed');
             dead++;
           } else {
             fail++;
@@ -404,16 +514,18 @@ class SyncService {
 
         if (r['success'] == true) {
           await _db.markCitingSynced(id);
+          debugPrint('✅ [syncCiting] row id=$id marked synced');
           ok++;
         } else if (r['permanent'] == true) {
           await _db.markCitingPermanentlyFailed(id);
+          debugPrint('🗑️ [syncCiting] row id=$id marked permanently failed');
           dead++;
         } else {
           fail++;
         }
-      } catch (e) {
+      } catch (e, st) {
         fail++;
-        debugPrint('❌ citing $id: $e');
+        debugPrint('❌ [syncCiting] exception on id=$id: $e\n$st');
       }
       if (fail > 0) await Future.delayed(const Duration(milliseconds: 150));
     }
