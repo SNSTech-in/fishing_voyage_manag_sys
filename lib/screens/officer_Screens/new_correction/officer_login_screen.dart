@@ -3,6 +3,9 @@ import '../../../database/database_helper.dart';
 import '../../../services/api_services/officer_api_service.dart';
 import 'officer_dashboard_screen.dart';
 
+// ✅ ADD THIS LINE
+import 'package:fishing_voyage_manag_sys/screens/depart_login_selection.dart';
+
 class OfficerLoginScreen extends StatefulWidget {
   const OfficerLoginScreen({super.key});
 
@@ -106,6 +109,19 @@ class _OfficerLoginScreenState extends State<OfficerLoginScreen> {
     }
   }
 
+  /// Back from Officer Login ALWAYS goes to the department login
+  /// selection screen. Deterministic regardless of how many copies
+  /// of this screen exist on the stack.
+  void _handleBack() {
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const DepartLoginSelection(),
+      ),
+      (route) => false,
+    );
+  }
+
   @override
   void dispose() {
     _userIdController.dispose();
@@ -115,18 +131,24 @@ class _OfficerLoginScreenState extends State<OfficerLoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        child: SingleChildScrollView(
-          physics: const BouncingScrollPhysics(),
-          child: Column(
-            children: [
-              _buildTopSection(context),
-              _buildLoginCard(),
-              const SizedBox(height: 16),
-              _buildFooter(),
-            ],
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _handleBack();
+      },
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        body: SafeArea(
+          child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            child: Column(
+              children: [
+                _buildTopSection(context),
+                _buildLoginCard(),
+                const SizedBox(height: 16),
+                _buildFooter(),
+              ],
+            ),
           ),
         ),
       ),
@@ -153,9 +175,7 @@ class _OfficerLoginScreenState extends State<OfficerLoginScreen> {
             left: 8,
             top: 8,
             child: IconButton(
-              onPressed: () {
-                if (Navigator.canPop(context)) Navigator.pop(context);
-              },
+              onPressed: _handleBack,
               icon: const Icon(Icons.arrow_back, color: darkBlue),
             ),
           ),

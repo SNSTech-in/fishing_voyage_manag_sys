@@ -1,6 +1,7 @@
 // screens/boat_owner/add_crew_screen.dart
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../services/api_services/boat_owners_api_service.dart';
 
 class AddCrewScreen extends StatefulWidget {
@@ -39,7 +40,18 @@ class _AddCrewScreenState extends State<AddCrewScreen> {
   bool isCaptain = false;
   bool canLogin = true;
 
+  // ── Live validation state (per field) ──
+  bool nameTouched = false;
+  bool aadhaarTouched = false;
+  bool nicTouched = false;
+  bool mobileTouched = false;
+  bool emergencyNameTouched = false;
+  bool emergencyMobileTouched = false;
+  bool addressTouched = false;
+
   final _dialogFormKey = GlobalKey<FormState>();
+
+  StateSetter? _dialogSetState;
 
   final List<String> genderOptions = ['MALE', 'FEMALE', 'OTHER'];
   // Updated: Only Captain and Crew options
@@ -166,52 +178,89 @@ class _AddCrewScreenState extends State<AddCrewScreen> {
   }
 
   String? _validateName(String? value) {
-    if (value == null || value.isEmpty) {
-      return 'Enter crew name';
+    final v = value?.trim() ?? '';
+    if (v.isEmpty) return 'Enter crew name';
+    if (v.length < 2) return 'Minimum 2 characters';
+    if (!RegExp(r'^[a-zA-Z\s]+$').hasMatch(v)) {
+      return 'Only letters and spaces';
     }
-    if (value.length < 2) {
-      return 'Name must be at least 2 characters';
+    return null;
+  }
+
+  String? _validateNicRef(String? value) {
+    final v = value?.trim() ?? '';
+    // Optional field — but if provided, validate
+    if (v.isEmpty) return null;
+    if (v.length < 3) return 'Minimum 3 characters';
+    if (!RegExp(r'^[a-zA-Z0-9\-/]+$').hasMatch(v)) {
+      return 'Letters, digits, - and / only';
     }
     return null;
   }
 
   String? _validateAadhaar(String? value) {
-    if (value == null || value.isEmpty) {
-      return null;
-    }
-    if (value.length != 12) {
-      return 'Enter valid 12-digit Aadhaar';
-    }
-    if (!RegExp(r'^[0-9]{12}$').hasMatch(value)) {
-      return 'Only numbers allowed';
-    }
+    final v = value?.trim() ?? '';
+    // Optional field
+    if (v.isEmpty) return null;
+    if (v.length != 12) return 'Enter valid 12-digit Aadhaar';
+    if (!RegExp(r'^[0-9]{12}$').hasMatch(v)) return 'Only digits allowed';
     return null;
   }
 
   String? _validateMobile(String? value) {
-    if (value == null || value.isEmpty) {
-      return 'Enter mobile number';
-    }
-    if (value.length != 10) {
-      return 'Enter valid 10-digit mobile number';
-    }
-    if (!RegExp(r'^[0-9]{10}$').hasMatch(value)) {
-      return 'Only numbers allowed';
+    final v = value?.trim() ?? '';
+    if (v.isEmpty) return 'Enter mobile number';
+    if (v.length != 10) return 'Enter 10-digit mobile number';
+    if (!RegExp(r'^[6-9][0-9]{9}$').hasMatch(v)) {
+      return 'Must start with 6-9';
     }
     return null;
   }
 
   String? _validateEmergencyMobile(String? value) {
-    if (value == null || value.isEmpty) {
-      return null;
-    }
-    if (value.length != 10) {
-      return 'Enter valid 10-digit mobile number';
-    }
-    if (!RegExp(r'^[0-9]{10}$').hasMatch(value)) {
-      return 'Only numbers allowed';
+    final v = value?.trim() ?? '';
+    // Optional field
+    if (v.isEmpty) return null;
+    if (v.length != 10) return 'Enter 10-digit mobile number';
+    if (!RegExp(r'^[6-9][0-9]{9}$').hasMatch(v)) {
+      return 'Must start with 6-9';
     }
     return null;
+  }
+
+  String? _validateEmergencyName(String? value) {
+    final v = value?.trim() ?? '';
+    // Optional field — only validate if a value is provided
+    if (v.isEmpty) return null;
+    if (v.length < 2) return 'Minimum 2 characters';
+    if (!RegExp(r'^[a-zA-Z\s]+$').hasMatch(v)) {
+      return 'Only letters and spaces';
+    }
+    return null;
+  }
+
+  String? _validateAddress(String? value) {
+    final v = value?.trim() ?? '';
+    // Optional field — only validate if a value is provided
+    if (v.isEmpty) return null;
+    if (v.length < 5) return 'Minimum 5 characters';
+    // Letters, digits, spaces, and safe punctuation
+    if (!RegExp(r'^[a-zA-Z0-9\s,.\-/#()&]+$').hasMatch(v)) {
+      return 'Contains invalid characters';
+    }
+    return null;
+  }
+
+  bool get _isFormComplete {
+    return nameController.text.trim().isNotEmpty &&
+        aadhaarController.text.trim().isNotEmpty &&
+        nicRefController.text.trim().isNotEmpty &&
+        mobileController.text.trim().isNotEmpty &&
+        emergencyNameController.text.trim().isNotEmpty &&
+        emergencyMobileController.text.trim().isNotEmpty &&
+        addressController.text.trim().isNotEmpty &&
+        selectedGender != null &&
+        selectedRole != null;
   }
 
   String _getInitials(String? name) {
@@ -561,6 +610,64 @@ class _AddCrewScreenState extends State<AddCrewScreen> {
   Future<void> _showAddCrewDialog() async {
     _clearControllers();
 
+    // Show the validation indicator immediately when the dialog opens.
+    nameTouched = true;
+    aadhaarTouched = true;
+    nicTouched = true;
+    mobileTouched = true;
+    emergencyMobileTouched = true;
+    emergencyNameTouched = true;
+    addressTouched = true;
+
+    // Attach listeners so ticks appear after the user starts typing
+    void attachTouched(TextEditingController c, void Function() mark) {
+      c.addListener(() {
+        if (!mounted) return;
+        final s = c.text.trim();
+        if (s.isNotEmpty) mark();
+      });
+    }
+
+    attachTouched(nameController, () {
+      if (!nameTouched) setState(() => nameTouched = true);
+    });
+    attachTouched(aadhaarController, () {
+      if (!aadhaarTouched) setState(() => aadhaarTouched = true);
+    });
+    attachTouched(nicRefController, () {
+      if (!nicTouched) setState(() => nicTouched = true);
+    });
+    attachTouched(mobileController, () {
+      if (!mobileTouched) setState(() => mobileTouched = true);
+    });
+    attachTouched(emergencyNameController, () {
+      if (!emergencyNameTouched) setState(() => emergencyNameTouched = true);
+    });
+    attachTouched(emergencyMobileController, () {
+      if (!emergencyMobileTouched) setState(() => emergencyMobileTouched = true);
+    });
+    attachTouched(addressController, () {
+      if (!addressTouched) setState(() => addressTouched = true);
+    });
+
+    // Rebuild the dialog whenever any field changes, so the Add button
+    // enable/disable state stays in sync with the form.
+    for (final c in [
+      nameController,
+      aadhaarController,
+      nicRefController,
+      mobileController,
+      emergencyNameController,
+      emergencyMobileController,
+      addressController,
+    ]) {
+      c.addListener(() {
+        if (mounted && _dialogSetState != null) {
+          _dialogSetState!(() {});
+        }
+      });
+    }
+
     // Reset isAdding state when dialog is opened
     isAdding = false;
 
@@ -570,6 +677,7 @@ class _AddCrewScreenState extends State<AddCrewScreen> {
       builder: (BuildContext context) {
         return StatefulBuilder(
           builder: (context, setStateDialog) {
+            _dialogSetState = setStateDialog;
             return AlertDialog(
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(20),
@@ -613,37 +721,61 @@ class _AddCrewScreenState extends State<AddCrewScreen> {
                       children: [
                         _buildDialogTextField(
                           controller: nameController,
-                          label: 'Crew Name *',
+                          label: 'Crew Name',
+                          isRequired: true,
                           hint: 'Enter crew name',
                           icon: Icons.person,
                           validator: _validateName,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.deny(RegExp(r'[0-9]')),
+                            CrewNameFormatter(),
+                          ],
+                          showValidation: nameTouched,
+                          maxLength: 50,
                         ),
                         const SizedBox(height: 12),
                         _buildDialogTextField(
                           controller: aadhaarController,
                           label: 'Aadhaar Number',
+                          isRequired: true,
                           hint: 'Enter 12-digit Aadhaar number',
                           icon: Icons.assignment_ind,
                           keyboardType: TextInputType.number,
                           validator: _validateAadhaar,
                           maxLength: 12,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                            LengthLimitingTextInputFormatter(12),
+                          ],
+                          showValidation: aadhaarTouched,
                         ),
                         const SizedBox(height: 12),
                         _buildDialogTextField(
                           controller: nicRefController,
                           label: 'NIC Reference',
+                          isRequired: true,
                           hint: 'e.g., NIC-AAD-2347',
                           icon: Icons.verified,
+                          validator: _validateNicRef,
+                          inputFormatters: [NicRefFormatter()],
+                          showValidation: nicTouched,
+                          maxLength: 30,
                         ),
                         const SizedBox(height: 12),
                         _buildDialogTextField(
                           controller: mobileController,
-                          label: 'Mobile Number *',
+                          label: 'Mobile Number',
+                          isRequired: true,
                           hint: 'Enter 10-digit mobile number',
                           icon: Icons.phone,
                           keyboardType: TextInputType.phone,
                           validator: _validateMobile,
                           maxLength: 10,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                            LengthLimitingTextInputFormatter(10),
+                          ],
+                          showValidation: mobileTouched,
                         ),
                         const SizedBox(height: 12),
                         Row(
@@ -708,26 +840,42 @@ class _AddCrewScreenState extends State<AddCrewScreen> {
                         _buildDialogTextField(
                           controller: emergencyNameController,
                           label: 'Emergency Contact Name',
+                          isRequired: true,
                           hint: 'Enter emergency contact name',
                           icon: Icons.contact_emergency,
+                          validator: _validateEmergencyName,
+                          inputFormatters: [EmergencyNameFormatter()],
+                          showValidation: emergencyNameTouched,
+                          maxLength: 50,
                         ),
                         const SizedBox(height: 12),
                         _buildDialogTextField(
                           controller: emergencyMobileController,
                           label: 'Emergency Contact No',
+                          isRequired: true,
                           hint: 'Enter 10-digit mobile number',
                           icon: Icons.phone_android,
                           keyboardType: TextInputType.phone,
                           validator: _validateEmergencyMobile,
                           maxLength: 10,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                            LengthLimitingTextInputFormatter(10),
+                          ],
+                          showValidation: emergencyMobileTouched,
                         ),
                         const SizedBox(height: 12),
                         _buildDialogTextField(
                           controller: addressController,
                           label: 'Address',
+                          isRequired: true,
                           hint: 'Enter address',
                           icon: Icons.location_on,
                           maxLines: 2,
+                          validator: _validateAddress,
+                          inputFormatters: [AddressFormatter()],
+                          showValidation: addressTouched,
+                          maxLength: 200,
                         ),
                       ],
                     ),
@@ -749,7 +897,7 @@ class _AddCrewScreenState extends State<AddCrewScreen> {
                   child: const Text('Cancel'),
                 ),
                 ElevatedButton(
-                  onPressed: isAdding
+                  onPressed: (isAdding || !_isFormComplete)
                       ? null
                       : () async {
                     if (_dialogFormKey.currentState!.validate()) {
@@ -816,7 +964,9 @@ class _AddCrewScreenState extends State<AddCrewScreen> {
                     }
                   },
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF1257C7),
+                    backgroundColor: (isAdding || !_isFormComplete)
+                        ? const Color(0xFFB0C4DE)   // grey when disabled
+                        : const Color(0xFF1257C7),   // blue when enabled
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10),
@@ -858,16 +1008,34 @@ class _AddCrewScreenState extends State<AddCrewScreen> {
     String? Function(String?)? validator,
     int? maxLength,
     int maxLines = 1,
+    List<TextInputFormatter>? inputFormatters,
+    bool showValidation = false,
+    bool isRequired = false,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: Color(0xFF07347F),
+        RichText(
+          text: TextSpan(
+            children: [
+              TextSpan(
+                text: label,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF07347F),
+                ),
+              ),
+              if (isRequired)
+                const TextSpan(
+                  text: ' *',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFFDC2626),
+                  ),
+                ),
+            ],
           ),
         ),
         const SizedBox(height: 6),
@@ -878,6 +1046,8 @@ class _AddCrewScreenState extends State<AddCrewScreen> {
           validator: validator,
           maxLength: maxLength,
           maxLines: maxLines,
+          inputFormatters: inputFormatters,
+          onChanged: (_) => setState(() {}),
           decoration: InputDecoration(
             hintText: hint,
             hintStyle: TextStyle(fontSize: 13, color: Colors.grey[400]),
@@ -898,16 +1068,17 @@ class _AddCrewScreenState extends State<AddCrewScreen> {
             ),
             errorBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: Colors.red, width: 1.5),
+              borderSide: const BorderSide(color: Color(0xFFD4DFEE)),
             ),
             focusedErrorBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: Colors.red, width: 2),
+              borderSide: const BorderSide(color: Color(0xFF1257C7), width: 2),
             ),
             contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             counterStyle: const TextStyle(fontSize: 11),
           ),
         ),
+        // No error text under the field — only the dot on the label row
       ],
     );
   }
@@ -1464,5 +1635,64 @@ class _AddCrewScreenState extends State<AddCrewScreen> {
         ],
       ),
     );
+  }
+}
+
+// ============================================================================
+// INPUT FORMATTERS
+// ============================================================================
+
+/// Letters and spaces only — for Crew Name.
+/// Allows: Ram Kumar, John, Priya
+class CrewNameFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    if (newValue.text.isEmpty) return newValue;
+    final regex = RegExp(r'^[a-zA-Z\s]+$');
+    return regex.hasMatch(newValue.text) ? newValue : oldValue;
+  }
+}
+
+/// Letters, digits, hyphens, slashes only — for NIC Reference.
+/// Allows: NIC-AAD-2347, NIC/2024/001, ABC123
+class NicRefFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    if (newValue.text.isEmpty) return newValue;
+    final regex = RegExp(r'^[a-zA-Z0-9\-/]+$');
+    return regex.hasMatch(newValue.text) ? newValue : oldValue;
+  }
+}
+
+/// Letters, digits, spaces, commas, dots, hyphens, slashes, #, (), and &.
+/// Used for Address.
+class AddressFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    if (newValue.text.isEmpty) return newValue;
+    final regex = RegExp(r'^[a-zA-Z0-9\s,.\-/#()&]+$');
+    return regex.hasMatch(newValue.text) ? newValue : oldValue;
+  }
+}
+
+/// Letters and spaces only — for Emergency Contact Name.
+class EmergencyNameFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    if (newValue.text.isEmpty) return newValue;
+    final regex = RegExp(r'^[a-zA-Z\s]+$');
+    return regex.hasMatch(newValue.text) ? newValue : oldValue;
   }
 }

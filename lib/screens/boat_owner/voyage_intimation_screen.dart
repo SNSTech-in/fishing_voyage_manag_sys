@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../../database/database_helper.dart';
 import '../../services/api_services/boat_owners_api_service.dart';
@@ -71,10 +72,6 @@ class _VoyageIntimationScreenState extends State<VoyageIntimationScreen> {
   // ================================================================
   // INIT
   // ================================================================
-
-// ================================================================
-// INIT
-// ================================================================
 
   @override
   void initState() {
@@ -381,9 +378,6 @@ class _VoyageIntimationScreenState extends State<VoyageIntimationScreen> {
   // ================================================================
   // ADD CREW SCREEN
   // ================================================================
-// ================================================================
-// ADD CREW SCREEN
-// ================================================================
 
   Future<void> _navigateToAddCrew() async {
     final result = await Navigator.push(
@@ -395,11 +389,8 @@ class _VoyageIntimationScreenState extends State<VoyageIntimationScreen> {
 
     if (!mounted) return;
 
-    // Always reload crew when coming back from AddCrewScreen
-    // This handles both successful addition and back button navigation
     await _loadCrew();
 
-    // Show success message only if a crew was actually added
     if (result == true) {
       _showSuccess('Crew member added successfully.');
     }
@@ -1363,12 +1354,6 @@ class _VoyageIntimationScreenState extends State<VoyageIntimationScreen> {
     final now = DateTime.now();
     final currentTime = TimeOfDay.fromDateTime(now);
 
-    // For start time, minimum is current time + 15 minutes
-    final minTime = TimeOfDay(
-      hour: currentTime.hour,
-      minute: currentTime.minute + 15,
-    ).replacing(hour: currentTime.hour + (currentTime.minute + 15 >= 60 ? 1 : 0));
-
     final picked = await showTimePicker(
       context: context,
       initialTime: isStart
@@ -1388,7 +1373,6 @@ class _VoyageIntimationScreenState extends State<VoyageIntimationScreen> {
       if (isStart) {
         startTime = picked;
 
-        // If return time is before start time, adjust it
         if (returnTime != null &&
             (returnDate == startDate || returnDate == null) &&
             _isTimeBefore(returnTime!, picked)) {
@@ -1398,7 +1382,6 @@ class _VoyageIntimationScreenState extends State<VoyageIntimationScreen> {
           );
         }
       } else {
-        // Validate return time is after start time
         if (startTime != null &&
             (returnDate == startDate || returnDate == null) &&
             _isTimeBefore(picked, startTime!)) {
@@ -1433,15 +1416,34 @@ class _VoyageIntimationScreenState extends State<VoyageIntimationScreen> {
     return null;
   }
 
+  String? _validateEmergencyName(String? value) {
+    final v = value?.trim() ?? '';
+
+    if (v.isEmpty) {
+      return 'Enter emergency contact name';
+    }
+    if (v.length < 2) {
+      return 'Minimum 2 characters';
+    }
+    if (!RegExp(r'^[a-zA-Z\s]+$').hasMatch(v)) {
+      return 'Only letters and spaces allowed';
+    }
+    return null;
+  }
+
   String? _validateEmergencyMobile(String? value) {
-    if (value == null || value.trim().isEmpty) {
+    final v = value?.trim() ?? '';
+
+    if (v.isEmpty) {
       return 'Enter emergency mobile number';
     }
 
-    final cleanNumber = value.replaceAll(RegExp(r'[^0-9]'), '');
+    if (!RegExp(r'^[0-9]{10}$').hasMatch(v)) {
+      return 'Enter a valid 10-digit mobile number';
+    }
 
-    if (cleanNumber.length != 10) {
-      return 'Enter valid 10-digit mobile number';
+    if (!RegExp(r'^[6-9]').hasMatch(v)) {
+      return 'Mobile number must start with 6-9';
     }
 
     return null;
@@ -1531,7 +1533,6 @@ class _VoyageIntimationScreenState extends State<VoyageIntimationScreen> {
       return;
     }
 
-    // Validate dates
     final startDateTime = DateTime(
       startDate!.year,
       startDate!.month,
@@ -1548,12 +1549,12 @@ class _VoyageIntimationScreenState extends State<VoyageIntimationScreen> {
       returnTime!.minute,
     );
 
-    // Check if start time is in the past
     final now = DateTime.now();
     if (startDateTime.isBefore(now)) {
       _showAlert(
         title: 'Invalid Start Time',
-        message: 'Voyage start time cannot be in the past.\n\nPlease select a future time.',
+        message:
+        'Voyage start time cannot be in the past.\n\nPlease select a future time.',
       );
       return;
     }
@@ -1592,29 +1593,14 @@ class _VoyageIntimationScreenState extends State<VoyageIntimationScreen> {
     });
 
     try {
-      // ============================================================
-      // API DATE FORMAT
-      // ============================================================
-
       final voyageStartDate = _formatApiDateTime(startDate!, startTime!);
       final voyageReturnDate = _formatApiDateTime(returnDate!, returnTime!);
 
-      // ============================================================
-      // CREW IDS
-      // ============================================================
-
       final crewIds = selectedCrewIds.map((id) => id.toString()).toList();
 
-      // ============================================================
-      // DESTINATION PORT IDS
-      // ============================================================
-
-      final destinationPortIds =
-      selectedDestinationPorts.map((port) => port['port_id'].toString()).toList();
-
-      // ============================================================
-      // REQUEST BODY
-      // ============================================================
+      final destinationPortIds = selectedDestinationPorts
+          .map((port) => port['port_id'].toString())
+          .toList();
 
       final requestBody = {
         'boat_id': selectedBoatId.toString(),
@@ -1638,10 +1624,6 @@ class _VoyageIntimationScreenState extends State<VoyageIntimationScreen> {
         'status': 'SUBMITTED',
       };
 
-      // ============================================================
-      // REQUEST LOG
-      // ============================================================
-
       debugPrint('===========================================================');
       debugPrint('VOYAGE API REQUEST');
       debugPrint('===========================================================');
@@ -1649,10 +1631,6 @@ class _VoyageIntimationScreenState extends State<VoyageIntimationScreen> {
       debugPrint('voyage_return_date: $voyageReturnDate');
       debugPrint('requestBody       : $requestBody');
       debugPrint('===========================================================');
-
-      // ============================================================
-      // API CALL
-      // ============================================================
 
       final response = await _apiService.createIntimation(requestBody);
 
@@ -1997,12 +1975,13 @@ class _VoyageIntimationScreenState extends State<VoyageIntimationScreen> {
                 label: 'Emergency Contact Name',
                 hint: 'Enter name',
                 icon: Icons.person_outline,
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return 'Enter emergency contact name';
-                  }
-                  return null;
-                },
+                maxLength: 50,
+                isRequired: true,
+                inputFormatters: [
+                  FilteringTextInputFormatter.deny(RegExp(r'[0-9]')),
+                  NameOnlyFormatter(),
+                ],
+                validator: _validateEmergencyName,
               ),
               const SizedBox(height: 10),
               _buildTextField(
@@ -2012,6 +1991,12 @@ class _VoyageIntimationScreenState extends State<VoyageIntimationScreen> {
                 icon: Icons.phone_outlined,
                 keyboardType: TextInputType.phone,
                 maxLength: 10,
+                isRequired: true,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(10),
+                  DigitsOnlyFormatter(),
+                ],
                 validator: _validateEmergencyMobile,
               ),
               const SizedBox(height: 16),
@@ -2104,9 +2089,12 @@ class _VoyageIntimationScreenState extends State<VoyageIntimationScreen> {
       onTap: _showBoatSelectionDialog,
       child: InputDecorator(
         decoration: _inputDecoration(
-          label: 'Boat',
+          label: null,
           hint: 'Select boat',
           icon: Icons.directions_boat_outlined,
+        ).copyWith(
+          label: _buildLabel(text: 'Boat', isRequired: true),
+          floatingLabelBehavior: FloatingLabelBehavior.always,
         ),
         child: Row(
           children: [
@@ -2387,9 +2375,12 @@ class _VoyageIntimationScreenState extends State<VoyageIntimationScreen> {
       onTap: _showPrimaryPortDialog,
       child: InputDecorator(
         decoration: _inputDecoration(
-          label: 'Primary Port',
+          label: null,
           hint: 'Select primary port',
           icon: Icons.flag_outlined,
+        ).copyWith(
+          label: _buildLabel(text: 'Primary Port', isRequired: true),
+          floatingLabelBehavior: FloatingLabelBehavior.always,
         ),
         child: Text(
           selectedPrimaryPortName ?? 'Select primary port',
@@ -2417,9 +2408,12 @@ class _VoyageIntimationScreenState extends State<VoyageIntimationScreen> {
       onTap: _showDestinationPortDialog,
       child: InputDecorator(
         decoration: _inputDecoration(
-          label: 'Destination Ports',
+          label: null,
           hint: 'Select destination ports',
           icon: Icons.location_on_outlined,
+        ).copyWith(
+          label: _buildLabel(text: 'Destination Ports', isRequired: true),
+          floatingLabelBehavior: FloatingLabelBehavior.always,
         ),
         child: Row(
           children: [
@@ -2461,6 +2455,7 @@ class _VoyageIntimationScreenState extends State<VoyageIntimationScreen> {
                 date: startDate,
                 icon: Icons.calendar_today_outlined,
                 onTap: () => _selectDate(context, true),
+                isRequired: true,
               ),
             ),
             const SizedBox(width: 8),
@@ -2470,6 +2465,7 @@ class _VoyageIntimationScreenState extends State<VoyageIntimationScreen> {
                 time: startTime,
                 icon: Icons.access_time_outlined,
                 onTap: () => _selectTime(context, true),
+                isRequired: true,
               ),
             ),
           ],
@@ -2483,6 +2479,7 @@ class _VoyageIntimationScreenState extends State<VoyageIntimationScreen> {
                 date: returnDate,
                 icon: Icons.event_available_outlined,
                 onTap: () => _selectDate(context, false),
+                isRequired: true,
               ),
             ),
             const SizedBox(width: 8),
@@ -2492,6 +2489,7 @@ class _VoyageIntimationScreenState extends State<VoyageIntimationScreen> {
                 time: returnTime,
                 icon: Icons.access_time_outlined,
                 onTap: () => _selectTime(context, false),
+                isRequired: true,
               ),
             ),
           ],
@@ -2516,6 +2514,7 @@ class _VoyageIntimationScreenState extends State<VoyageIntimationScreen> {
             decimal: true,
           ),
           validator: _validateNumber,
+          isRequired: true,            // ✅ NEW
         ),
         const SizedBox(height: 10),
         _buildTextField(
@@ -2527,6 +2526,7 @@ class _VoyageIntimationScreenState extends State<VoyageIntimationScreen> {
             decimal: true,
           ),
           validator: _validateNumber,
+          isRequired: true,            // ✅ NEW
         ),
         const SizedBox(height: 10),
         _buildTextField(
@@ -2536,6 +2536,7 @@ class _VoyageIntimationScreenState extends State<VoyageIntimationScreen> {
           icon: Icons.health_and_safety_outlined,
           keyboardType: TextInputType.number,
           validator: _validateNumber,
+          isRequired: true,            // ✅ NEW
         ),
         const SizedBox(height: 10),
         _buildTextField(
@@ -2545,6 +2546,7 @@ class _VoyageIntimationScreenState extends State<VoyageIntimationScreen> {
           icon: Icons.circle_outlined,
           keyboardType: TextInputType.number,
           validator: _validateNumber,
+          isRequired: true,            // ✅ NEW
         ),
         const SizedBox(height: 10),
         _buildTextField(
@@ -2554,6 +2556,7 @@ class _VoyageIntimationScreenState extends State<VoyageIntimationScreen> {
           icon: Icons.radio_outlined,
           keyboardType: TextInputType.number,
           validator: _validateNumber,
+          isRequired: true,            // ✅ NEW
         ),
       ],
     );
@@ -2988,6 +2991,38 @@ class _VoyageIntimationScreenState extends State<VoyageIntimationScreen> {
   }
 
   // ================================================================
+  // LABEL WITH RED *
+  // ================================================================
+
+  Widget _buildLabel({
+    required String text,
+    required bool isRequired,
+  }) {
+    return RichText(
+      text: TextSpan(
+        children: [
+          TextSpan(
+            text: text,
+            style: const TextStyle(
+              fontSize: 13,
+              color: Color(0xFF53627A),
+            ),
+          ),
+          if (isRequired)
+            const TextSpan(
+              text: ' *',
+              style: TextStyle(
+                fontSize: 13,
+                color: Color(0xFFDC2626),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // ================================================================
   // TEXT FIELD
   // ================================================================
 
@@ -2999,20 +3034,25 @@ class _VoyageIntimationScreenState extends State<VoyageIntimationScreen> {
     TextInputType keyboardType = TextInputType.text,
     String? Function(String?)? validator,
     int? maxLength,
+    List<TextInputFormatter>? inputFormatters,
+    bool isRequired = false,
   }) {
     return TextFormField(
       controller: controller,
       keyboardType: keyboardType,
       validator: validator,
       maxLength: maxLength,
+      inputFormatters: inputFormatters,
       style: const TextStyle(
         fontSize: 13,
       ),
       decoration: _inputDecoration(
-        label: label,
+        label: null,
         hint: hint,
         icon: icon,
       ).copyWith(
+        label: _buildLabel(text: label, isRequired: isRequired),
+        floatingLabelBehavior: FloatingLabelBehavior.always,
         counterText: maxLength != null ? null : '',
       ),
     );
@@ -3023,7 +3063,7 @@ class _VoyageIntimationScreenState extends State<VoyageIntimationScreen> {
   // ================================================================
 
   InputDecoration _inputDecoration({
-    required String label,
+    String? label,
     required String hint,
     IconData? icon,
   }) {
@@ -3096,15 +3136,19 @@ class _VoyageIntimationScreenState extends State<VoyageIntimationScreen> {
     required DateTime? date,
     required IconData icon,
     required VoidCallback onTap,
+    bool isRequired = false,
   }) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(10),
       child: InputDecorator(
         decoration: _inputDecoration(
-          label: label,
+          label: null,
           hint: 'Select date',
           icon: icon,
+        ).copyWith(
+          label: _buildLabel(text: label, isRequired: isRequired),
+          floatingLabelBehavior: FloatingLabelBehavior.always,
         ),
         child: Text(
           date == null
@@ -3129,15 +3173,19 @@ class _VoyageIntimationScreenState extends State<VoyageIntimationScreen> {
     required TimeOfDay? time,
     required IconData icon,
     required VoidCallback onTap,
+    bool isRequired = false,
   }) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(10),
       child: InputDecorator(
         decoration: _inputDecoration(
-          label: label,
+          label: null,
           hint: 'Select time',
           icon: icon,
+        ).copyWith(
+          label: _buildLabel(text: label, isRequired: isRequired),
+          floatingLabelBehavior: FloatingLabelBehavior.always,
         ),
         child: Text(
           time == null
@@ -3199,5 +3247,36 @@ class _VoyageIntimationScreenState extends State<VoyageIntimationScreen> {
         ),
       ),
     );
+  }
+}
+
+// ============================================================================
+// INPUT FORMATTERS
+// ============================================================================
+
+/// Allows only letters and spaces. Blocks digits and special characters.
+/// Used for emergency contact name.
+class NameOnlyFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+      TextEditingValue oldValue,
+      TextEditingValue newValue,
+      ) {
+    if (newValue.text.isEmpty) return newValue;
+    final regex = RegExp(r'^[a-zA-Z\s]+$');
+    return regex.hasMatch(newValue.text) ? newValue : oldValue;
+  }
+}
+
+/// Allows only digits. Used for emergency contact number.
+class DigitsOnlyFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+      TextEditingValue oldValue,
+      TextEditingValue newValue,
+      ) {
+    if (newValue.text.isEmpty) return newValue;
+    final regex = RegExp(r'^[0-9]+$');
+    return regex.hasMatch(newValue.text) ? newValue : oldValue;
   }
 }

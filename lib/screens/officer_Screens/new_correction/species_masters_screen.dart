@@ -24,7 +24,12 @@ class _SpeciesMastersScreenState extends State<SpeciesMastersScreen> {
   static const Color _success = Color(0xFF059669);
   static const Color _warning = Color(0xFFD97706);
 
+  /// The FULL master list (never touched by filters).
+  List<Map<String, dynamic>> _allItems = [];
+
+  /// The currently displayed list (after applying status + search filters).
   List<Map<String, dynamic>> _items = [];
+
   bool _loading = true;
   String? _error;
 
@@ -44,25 +49,67 @@ class _SpeciesMastersScreenState extends State<SpeciesMastersScreen> {
     super.dispose();
   }
 
+  // ── Robust field readers ────────────────────────────────
+
+  /// Convert a JSON value to bool regardless of `true` / `"true"` / 1 / "1".
+  bool _asBool(dynamic v) {
+    if (v == null) return false;
+    if (v is bool) return v;
+    if (v is num) return v != 0;
+    final s = v.toString().toLowerCase().trim();
+    return s == 'true' || s == '1' || s == 'yes' || s == 'y';
+  }
+
+  /// Read "is active" from a record, trying several plausible key names
+  /// so this works no matter how the backend names the field.
+  bool _activeOf(Map<String, dynamic> e) {
+    for (final k in const [
+      'is_active',
+      'active',
+      'isActive',
+      'enabled',
+      'is_enabled',
+    ]) {
+      if (e.containsKey(k)) return _asBool(e[k]);
+    }
+    return false;
+  }
+
+  /// Read "is banned" from a record, trying several plausible key names.
+  bool _bannedOf(Map<String, dynamic> e) {
+    for (final k in const [
+      'is_banned',
+      'banned',
+      'isBanned',
+      'blocked',
+      'is_blocked',
+    ]) {
+      if (e.containsKey(k)) return _asBool(e[k]);
+    }
+    return false;
+  }
+
+  // ── Networking ──────────────────────────────────────────
+
   Future<void> _load() async {
     setState(() {
       _loading = true;
       _error = null;
     });
 
+    // Fetch the FULL master list. We do not rely on the backend to filter.
     final res = await _api.fetchSpecies(
       search: _searchCtrl.text.trim(),
-      banned: _bannedFilter,
-      active: _activeFilter,
     );
 
     if (!mounted) return;
 
     if (res['success'] == true) {
       setState(() {
-        _items = OfficersApiService.extractList(res);
+        _allItems = OfficersApiService.extractList(res);
         _loading = false;
       });
+      _applyFilters(); // derive _items from the freshly-fetched master
     } else {
       setState(() {
         _error = res['message']?.toString() ?? 'Failed to load species';
@@ -71,11 +118,53 @@ class _SpeciesMastersScreenState extends State<SpeciesMastersScreen> {
     }
   }
 
-  int _countBanned() =>
-      _items.where((e) => e['is_banned'] == true).length;
+  // ── Local filtering (NO network call) ───────────────────
 
-  int _countActive() =>
-      _items.where((e) => e['is_active'] == true).length;
+  /// Re-derives `_items` from `_allItems` using the current filter chips
+  /// and search text. This is synchronous and guarantees the list shown
+  /// matches the selected category.
+  void _applyFilters() {
+    final q = _searchCtrl.text.trim().toLowerCase();
+
+    var filtered = List<Map<String, dynamic>>.from(_allItems);
+
+    // Active / Inactive
+    if (_activeFilter != null) {
+      filtered = filtered
+          .where((e) => _activeOf(e) == _activeFilter)
+          .toList();
+    }
+
+    // Banned / Not banned
+    if (_bannedFilter != null) {
+      filtered = filtered
+          .where((e) => _bannedOf(e) == _bannedFilter)
+          .toList();
+    }
+
+    // Search
+    if (q.isNotEmpty) {
+      filtered = filtered.where((e) {
+        final name = (e['fish_name'] ?? '').toString().toLowerCase();
+        final id = (e['species_id'] ?? '').toString().toLowerCase();
+        return name.contains(q) || id.contains(q);
+      }).toList();
+    }
+
+    setState(() {
+      _items = filtered;
+    });
+  }
+
+  // ── Summary counts derived from the FULL master list ────
+
+  int get _totalCount => _allItems.length;
+
+  int get _activeCount =>
+      _allItems.where(_activeOf).length;
+
+  int get _bannedCount =>
+      _allItems.where(_bannedOf).length;
 
   @override
   Widget build(BuildContext context) {
@@ -122,7 +211,7 @@ class _SpeciesMastersScreenState extends State<SpeciesMastersScreen> {
     );
   }
 
-  // ── Summary cards (Total / Active / Banned) ──────────────
+  // ── Summary cards (Total / Active / Banned) ─────────────
   Widget _summaryRow() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
@@ -131,7 +220,7 @@ class _SpeciesMastersScreenState extends State<SpeciesMastersScreen> {
           Expanded(
             child: _summaryCard(
               label: 'Total',
-              value: _items.length,
+              value: _totalCount,
               icon: Icons.list_alt_rounded,
               color: Colors.indigo,
             ),
@@ -140,7 +229,7 @@ class _SpeciesMastersScreenState extends State<SpeciesMastersScreen> {
           Expanded(
             child: _summaryCard(
               label: 'Active',
-              value: _countActive(),
+              value: _activeCount,
               icon: Icons.check_circle_rounded,
               color: _success,
             ),
@@ -149,7 +238,7 @@ class _SpeciesMastersScreenState extends State<SpeciesMastersScreen> {
           Expanded(
             child: _summaryCard(
               label: 'Banned',
-              value: _countBanned(),
+              value: _bannedCount,
               icon: Icons.block_rounded,
               color: _danger,
             ),
@@ -201,7 +290,7 @@ class _SpeciesMastersScreenState extends State<SpeciesMastersScreen> {
     );
   }
 
-  // ── Search + filter chips ────────────────────────────────
+  // ── Search + filter chips ───────────────────────────────
   Widget _searchAndFilters() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
@@ -210,7 +299,9 @@ class _SpeciesMastersScreenState extends State<SpeciesMastersScreen> {
           TextField(
             controller: _searchCtrl,
             textInputAction: TextInputAction.search,
-            onSubmitted: (_) => _load(),
+            // Apply locally so search + chip filters compose correctly.
+            onChanged: (_) => _applyFilters(),
+            onSubmitted: (_) => _applyFilters(),
             decoration: InputDecoration(
               hintText: 'Search species...',
               prefixIcon: const Icon(Icons.search),
@@ -220,7 +311,7 @@ class _SpeciesMastersScreenState extends State<SpeciesMastersScreen> {
                 icon: const Icon(Icons.close_rounded, size: 18),
                 onPressed: () {
                   _searchCtrl.clear();
-                  _load();
+                  _applyFilters();
                 },
               ),
               border: OutlineInputBorder(
@@ -238,14 +329,14 @@ class _SpeciesMastersScreenState extends State<SpeciesMastersScreen> {
               children: [
                 _filterChip(
                   label: 'All',
-                  selected: _bannedFilter == null &&
-                      _activeFilter == null,
+                  selected:
+                  _bannedFilter == null && _activeFilter == null,
                   onTap: () {
                     setState(() {
                       _bannedFilter = null;
                       _activeFilter = null;
                     });
-                    _load();
+                    _applyFilters(); // local, synchronous
                   },
                 ),
                 const SizedBox(width: 8),
@@ -258,7 +349,7 @@ class _SpeciesMastersScreenState extends State<SpeciesMastersScreen> {
                       _activeFilter = true;
                       _bannedFilter = null;
                     });
-                    _load();
+                    _applyFilters();
                   },
                 ),
                 const SizedBox(width: 8),
@@ -271,7 +362,7 @@ class _SpeciesMastersScreenState extends State<SpeciesMastersScreen> {
                       _activeFilter = false;
                       _bannedFilter = null;
                     });
-                    _load();
+                    _applyFilters();
                   },
                 ),
                 const SizedBox(width: 8),
@@ -284,7 +375,7 @@ class _SpeciesMastersScreenState extends State<SpeciesMastersScreen> {
                       _bannedFilter = true;
                       _activeFilter = null;
                     });
-                    _load();
+                    _applyFilters();
                   },
                 ),
                 const SizedBox(width: 8),
@@ -297,7 +388,7 @@ class _SpeciesMastersScreenState extends State<SpeciesMastersScreen> {
                       _bannedFilter = false;
                       _activeFilter = null;
                     });
-                    _load();
+                    _applyFilters();
                   },
                 ),
               ],
@@ -385,8 +476,8 @@ class _SpeciesMastersScreenState extends State<SpeciesMastersScreen> {
   Widget _speciesTile(Map<String, dynamic> s) {
     final name = s['fish_name']?.toString() ?? '—';
     final id = s['species_id'] ?? '—';
-    final isBanned = s['is_banned'] == true;
-    final isActive = s['is_active'] == true;
+    final isBanned = _bannedOf(s);
+    final isActive = _activeOf(s);
 
     final Color accent = isBanned
         ? _danger

@@ -76,9 +76,9 @@ class _VoyagesSummaryScreenState extends State<VoyagesSummaryScreen> {
   @override
   void initState() {
     super.initState();
-    final now = DateTime.now();
-    _toDate = now;
-    _fromDate = now.subtract(const Duration(days: 30));
+    // ✅ ONLY CHANGE: From is fixed to 1 Aug 2026; To is today.
+    _fromDate = DateTime(2026, 8, 1);
+    _toDate = DateTime.now();
     _loadInitialData();
   }
 
@@ -194,9 +194,7 @@ class _VoyagesSummaryScreenState extends State<VoyagesSummaryScreen> {
   }
 
   // ═══════════════════════════════════════════════════════════
-  // FIXED COUNT — always comes from the full unfiltered dataset.
-  // ── null   → total of all voyages
-  // ── status → total of that status across all voyages
+  // FIXED COUNT
   // ═══════════════════════════════════════════════════════════
   int _countFor(String? status) {
     if (status == null) return _allCount;
@@ -310,13 +308,10 @@ class _VoyagesSummaryScreenState extends State<VoyagesSummaryScreen> {
 
   // ═══════════════════════════════════════════════════════════
   // SELECT STATUS
-  // ── Only re-slices the already-fetched full dataset.
-  // ── Tiles stay visible; their counts come from _statusCounts.
   // ═══════════════════════════════════════════════════════════
   Future<void> _selectStatus(String? status) async {
     if (!mounted) return;
 
-    // Toggle off if same status tapped
     final newFilter = (status == _statusFilter) ? null : status;
 
     setState(() {
@@ -461,17 +456,17 @@ class _VoyagesSummaryScreenState extends State<VoyagesSummaryScreen> {
           ),
           const SizedBox(width: 6),
           Tooltip(
-            message: 'Reset to last 30 days',
+            message: 'Reset to 01 Aug 2026 → today',
             child: Material(
               color: _primary.withOpacity(0.08),
               borderRadius: BorderRadius.circular(10),
               child: InkWell(
                 borderRadius: BorderRadius.circular(10),
                 onTap: () async {
-                  final now = DateTime.now();
+                  // ✅ Reset uses the same fixed From (1 Aug 2026)
                   setState(() {
-                    _toDate = now;
-                    _fromDate = now.subtract(const Duration(days: 30));
+                    _fromDate = DateTime(2026, 8, 1);
+                    _toDate = DateTime.now();
                     _statusFilter = null;
                     _searchCtrl.clear();
                   });
@@ -587,8 +582,6 @@ class _VoyagesSummaryScreenState extends State<VoyagesSummaryScreen> {
 
   // ═══════════════════════════════════════════════════════════
   // STATUS SQUARES
-  // ── Every tile count is fixed (from full dataset).
-  // ── Clicking a tile only changes the list below, not counts.
   // ═══════════════════════════════════════════════════════════
   Widget _statusSquares() {
     final statuses = _visibleStatuses;
@@ -601,7 +594,6 @@ class _VoyagesSummaryScreenState extends State<VoyagesSummaryScreen> {
         child: ListView(
           scrollDirection: Axis.horizontal,
           children: [
-            // ── ALL (fixed total) ──
             _statusSquare(
               label: 'All',
               count: _countFor(null),
@@ -615,7 +607,6 @@ class _VoyagesSummaryScreenState extends State<VoyagesSummaryScreen> {
               },
             ),
 
-            // ── EVERY DISCOVERED STATUS (fixed count each) ──
             for (final status in statuses) ...[
               const SizedBox(width: 10),
               _statusSquare(
@@ -1082,7 +1073,7 @@ class _VoyagesSummaryScreenState extends State<VoyagesSummaryScreen> {
   }
 
   // ═══════════════════════════════════════════════════════════
-  // DETAILS → NEW SCREEN (calls /admin/voyages/{id})
+  // DETAILS → VOYAGE DETAILS
   // ═══════════════════════════════════════════════════════════
   void _showDetailsSheet(Map<String, dynamic> v) {
     final intimationId = _intValue(v['intimation_id']);

@@ -34,21 +34,61 @@ class _CrewNotReturnedScreenState extends State<CrewNotReturnedScreen> {
     _load();
   }
 
-  String _fmt(DateTime d) {
+  /// Date-only format: YYYY-MM-DD
+  String _fmtDate(DateTime d) {
     final m = d.month.toString().padLeft(2, '0');
     final day = d.day.toString().padLeft(2, '0');
     return '${d.year}-$m-$day';
   }
 
+  /// Full ISO datetime: YYYY-MM-DDTHH:mm:ss
+  /// Used so a single-day filter covers the whole day (00:00:00 → 23:59:59).
+  String _fmtDateTime(DateTime d) {
+    final m = d.month.toString().padLeft(2, '0');
+    final day = d.day.toString().padLeft(2, '0');
+    final h = d.hour.toString().padLeft(2, '0');
+    final min = d.minute.toString().padLeft(2, '0');
+    final s = d.second.toString().padLeft(2, '0');
+    return '${d.year}-$m-$day' 'T$h:$min:$s';
+  }
+
+  bool _isSameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
   Future<void> _load() async {
+    // Guard: if user picked From > To, swap them so the range is always valid.
+    if (_fromDate.isAfter(_toDate)) {
+      final tmp = _fromDate;
+      _fromDate = _toDate;
+      _toDate = tmp;
+    }
+
     setState(() {
       _loading = true;
       _error = null;
     });
 
+    // If From and To are the SAME calendar day, expand to full-day range
+    // so records with a time component on that day are included.
+    // Otherwise, send the date range as-is (inclusive).
+    final String fromParam;
+    final String toParam;
+
+    if (_isSameDay(_fromDate, _toDate)) {
+      final start = DateTime(
+          _fromDate.year, _fromDate.month, _fromDate.day, 0, 0, 0);
+      final end = DateTime(
+          _toDate.year, _toDate.month, _toDate.day, 23, 59, 59);
+      fromParam = _fmtDateTime(start);
+      toParam = _fmtDateTime(end);
+    } else {
+      fromParam = _fmtDate(_fromDate);
+      toParam = _fmtDate(_toDate);
+    }
+
     final res = await _api.fetchCrewNotReturned(
-      fromDate: _fmt(_fromDate),
-      toDate: _fmt(_toDate),
+      fromDate: fromParam,
+      toDate: toParam,
     );
 
     if (!mounted) return;
@@ -119,7 +159,7 @@ class _CrewNotReturnedScreenState extends State<CrewNotReturnedScreen> {
           Expanded(
             child: _dateChip(
               'From',
-              _fmt(_fromDate),
+              _fmtDate(_fromDate),
                   () async {
                 final d = await showDatePicker(
                   context: context,
@@ -128,7 +168,13 @@ class _CrewNotReturnedScreenState extends State<CrewNotReturnedScreen> {
                   lastDate: DateTime(2100),
                 );
                 if (d != null) {
-                  setState(() => _fromDate = d);
+                  setState(() {
+                    _fromDate = d;
+                    // Keep range valid — if From > To, snap To to From.
+                    if (_fromDate.isAfter(_toDate)) {
+                      _toDate = d;
+                    }
+                  });
                   _load();
                 }
               },
@@ -138,7 +184,7 @@ class _CrewNotReturnedScreenState extends State<CrewNotReturnedScreen> {
           Expanded(
             child: _dateChip(
               'To',
-              _fmt(_toDate),
+              _fmtDate(_toDate),
                   () async {
                 final d = await showDatePicker(
                   context: context,
@@ -147,7 +193,13 @@ class _CrewNotReturnedScreenState extends State<CrewNotReturnedScreen> {
                   lastDate: DateTime(2100),
                 );
                 if (d != null) {
-                  setState(() => _toDate = d);
+                  setState(() {
+                    _toDate = d;
+                    // Keep range valid — if To < From, snap From to To.
+                    if (_toDate.isBefore(_fromDate)) {
+                      _fromDate = d;
+                    }
+                  });
                   _load();
                 }
               },

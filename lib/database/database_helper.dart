@@ -1442,6 +1442,61 @@ class DatabaseHelper {
     });
   }
 
+  /// Merge a server-supplied list of pings into the local cache for a
+  /// voyage. Does NOT delete existing local rows — it only inserts the
+  /// ones that aren't already present. Safe to call on every map open.
+  Future<int> mergeServerLocations(
+    int voyageId,
+    List<Map<String, dynamic>> serverPoints,
+  ) async {
+    if (serverPoints.isEmpty) return 0;
+
+    return await runWithRetry((db) async {
+      final refNo = await getVoyageReferenceNo(voyageId) ?? 'UNKNOWN';
+      int inserted = 0;
+
+      for (final p in serverPoints) {
+        final lat = (p['latitude'] as num?)?.toDouble();
+        final lng = (p['longitude'] as num?)?.toDouble();
+        if (lat == null || lng == null) continue;
+
+        final ts = (p['timestamp'] ?? '').toString();
+        if (ts.isEmpty) continue;
+
+        final row = {
+          'voyage_id': voyageId,
+          'intimation_id': voyageId,
+          'voyage_no': (p['voyage_no'] ?? refNo).toString(),
+          'latitude': lat,
+          'longitude': lng,
+          'timestamp': ts,
+          'ping_date_time': ts,
+          'synced': 1,          // came from server → already synced
+          'is_synced': 1,
+          'synced_at': DateTime.now().toIso8601String(),
+        };
+
+        // ConflictAlgorithm.ignore + UNIQUE(voyage_id, lat, lng, ts)
+        // makes this idempotent — duplicates are silently dropped.
+        await db.insert(
+          'boat_locations',
+          row,
+          conflictAlgorithm: ConflictAlgorithm.ignore,
+        );
+
+        final id = await db.insert(
+          'location_points',
+          row,
+          conflictAlgorithm: ConflictAlgorithm.ignore,
+        );
+        if (id > 0) inserted++;
+      }
+
+      debugPrint('✅ [DB] mergeServerLocations: $inserted new points for voyage $voyageId');
+      return inserted;
+    });
+  }
+
   Future<Map<String, dynamic>?> getLastLocationPoint(int voyageId) async {
     return await runWithRetry((db) async {
       final result = await db.query(

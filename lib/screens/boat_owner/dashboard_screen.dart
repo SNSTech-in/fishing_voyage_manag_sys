@@ -288,12 +288,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final owner = await _db.getBoatOwner();
 
       if (owner != null && mounted) {
+        // Treat blank/whitespace values as null so the UI can hide
+        // rows that have nothing to show.
+        String? safe(dynamic v) {
+          final s = v?.toString().trim() ?? '';
+          return s.isEmpty ? null : s;
+        }
+
         setState(() {
-          ownerName = owner['owner_name']?.toString();
-          ownerMobile = owner['mobile']?.toString();
-          ownerAddress = owner['address']?.toString();
-          ownerHomePort = owner['home_port_name']?.toString();
+          ownerName = safe(owner['owner_name']);
+          ownerMobile = safe(owner['mobile']);
+          ownerAddress = safe(owner['address']);
+          ownerHomePort = safe(owner['home_port_name']);
         });
+
+        debugPrint(
+          '📋 [profile] name=$ownerName mobile=$ownerMobile '
+          'address=$ownerAddress homePort=$ownerHomePort',
+        );
       }
     } catch (e) {
       debugPrint('Profile loading error: $e');
@@ -2852,7 +2864,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               fontWeight: FontWeight.w900,
                             ),
                           ),
-                          if (ownerMobile != null) ...[
+                          if (ownerMobile != null && ownerMobile!.isNotEmpty) ...[
                             const SizedBox(height: 3),
                             Text(
                               ownerMobile!,
@@ -2867,30 +2879,39 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 14),
-                Container(
-                  padding: const EdgeInsets.all(11),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.10),
-                    borderRadius: BorderRadius.circular(13),
-                  ),
-                  child: Column(
-                    children: [
-                      if (ownerAddress != null)
-                        _drawerProfileRow(
-                          Icons.location_on_rounded,
-                          ownerAddress!,
-                        ),
-                      if (ownerHomePort != null) ...[
-                        const SizedBox(height: 7),
-                        _drawerProfileRow(
-                          Icons.directions_boat_rounded,
-                          'Home Port: $ownerHomePort',
-                        ),
+                // Profile info card — only rendered when there is at
+                // least one non-empty field. If the boat owner did not
+                // fill in an address or home port during registration,
+                // the card is skipped entirely (no blank rows).
+                if ((ownerAddress != null && ownerAddress!.isNotEmpty) ||
+                    (ownerHomePort != null && ownerHomePort!.isNotEmpty)) ...[
+                  const SizedBox(height: 14),
+                  Container(
+                    padding: const EdgeInsets.all(11),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.10),
+                      borderRadius: BorderRadius.circular(13),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (ownerAddress != null && ownerAddress!.isNotEmpty)
+                          _drawerProfileRow(
+                            Icons.location_on_rounded,
+                            ownerAddress!,
+                          ),
+                        if ((ownerAddress != null && ownerAddress!.isNotEmpty) &&
+                            (ownerHomePort != null && ownerHomePort!.isNotEmpty))
+                          const SizedBox(height: 7),
+                        if (ownerHomePort != null && ownerHomePort!.isNotEmpty)
+                          _drawerProfileRow(
+                            Icons.directions_boat_rounded,
+                            'Home Port: $ownerHomePort',
+                          ),
                       ],
-                    ],
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           ),

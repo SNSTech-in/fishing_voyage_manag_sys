@@ -1,6 +1,7 @@
 // screens/boat_owner/boat_selection_screen.dart
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../database/database_helper.dart';
 import '../../services/api_services/boat_owners_api_service.dart';
@@ -250,10 +251,12 @@ class _AddBoatState extends State<AddBoat> {
                     _buildAddBoatField(
                       label: 'Boat Registration No',
                       hint: 'e.g., IND-KA-2231',
-                      controller:
-                      boatRegNoController,
+                      controller: boatRegNoController,
                       icon: Icons.assignment_rounded,
                       isRequired: true,
+                      inputFormatters: [RegNoFormatter()],
+                      validator: _validateRegNo,
+                      showValidation: boatRegNoController.text.isNotEmpty,
                     ),
 
                     const SizedBox(height: 12),
@@ -261,11 +264,12 @@ class _AddBoatState extends State<AddBoat> {
                     _buildAddBoatField(
                       label: 'Boat Name',
                       hint: 'e.g., Sagar Kanya',
-                      controller:
-                      boatNameController,
-                      icon:
-                      Icons.directions_boat_rounded,
+                      controller: boatNameController,
+                      icon: Icons.directions_boat_rounded,
                       isRequired: true,
+                      inputFormatters: [BoatNameFormatter()],
+                      validator: _validateBoatName,
+                      showValidation: boatNameController.text.isNotEmpty,
                     ),
 
                     const SizedBox(height: 12),
@@ -273,11 +277,12 @@ class _AddBoatState extends State<AddBoat> {
                     _buildAddBoatField(
                       label: 'License ID',
                       hint: 'e.g., FL-KA-77120',
-                      controller:
-                      licenceIdController,
-                      icon:
-                      Icons.document_scanner_rounded,
+                      controller: licenceIdController,
+                      icon: Icons.document_scanner_rounded,
                       isRequired: true,
+                      inputFormatters: [LicenceIdFormatter()],
+                      validator: _validateLicenceId,
+                      showValidation: licenceIdController.text.isNotEmpty,
                     ),
 
                     const SizedBox(height: 12),
@@ -330,30 +335,24 @@ class _AddBoatState extends State<AddBoat> {
                   onPressed: isLoadingLocal
                       ? null
                       : () async {
-                    if (boatRegNoController.text
-                        .trim()
-                        .isEmpty) {
-                      _showError(
-                        'Please enter boat registration number',
-                      );
+                    final regErr = _validateRegNo(boatRegNoController.text);
+                    if (regErr != null) {
+                      _showError(regErr);
+                      setStateDialog(() {});
                       return;
                     }
 
-                    if (boatNameController.text
-                        .trim()
-                        .isEmpty) {
-                      _showError(
-                        'Please enter boat name',
-                      );
+                    final nameErr = _validateBoatName(boatNameController.text);
+                    if (nameErr != null) {
+                      _showError(nameErr);
+                      setStateDialog(() {});
                       return;
                     }
 
-                    if (licenceIdController.text
-                        .trim()
-                        .isEmpty) {
-                      _showError(
-                        'Please enter license ID',
-                      );
+                    final licErr = _validateLicenceId(licenceIdController.text);
+                    if (licErr != null) {
+                      _showError(licErr);
+                      setStateDialog(() {});
                       return;
                     }
 
@@ -475,6 +474,40 @@ class _AddBoatState extends State<AddBoat> {
     licenceValidUptoController.dispose();
   }
 
+  // ============================================================================
+  // VALIDATORS
+  // ============================================================================
+
+  String? _validateRegNo(String v) {
+    final t = v.trim();
+    if (t.isEmpty) return 'Registration required';
+    if (t.length < 3) return 'Minimum 3 characters';
+    if (!RegExp(r'^[a-zA-Z0-9\-]+$').hasMatch(t)) {
+      return 'Letters, digits and - only';
+    }
+    return null;
+  }
+
+  String? _validateBoatName(String v) {
+    final t = v.trim();
+    if (t.isEmpty) return 'Boat name required';
+    if (t.length < 2) return 'Minimum 2 characters';
+    if (!RegExp(r'^[a-zA-Z\s]+$').hasMatch(t)) {
+      return 'Letters and spaces only';
+    }
+    return null;
+  }
+
+  String? _validateLicenceId(String v) {
+    final t = v.trim();
+    if (t.isEmpty) return 'License ID required';
+    if (t.length < 3) return 'Minimum 3 characters';
+    if (!RegExp(r'^[a-zA-Z0-9\-]+$').hasMatch(t)) {
+      return 'Letters, digits and - only';
+    }
+    return null;
+  }
+
   // ============================================================
   // ADD BOAT FIELD
   // ============================================================
@@ -487,7 +520,15 @@ class _AddBoatState extends State<AddBoat> {
     bool isRequired = false,
     bool readOnly = false,
     VoidCallback? onTap,
+    List<TextInputFormatter>? inputFormatters,
+    String? Function(String)? validator,
+    bool showValidation = false,
   }) {
+    final error = showValidation && validator != null
+        ? validator(controller.text)
+        : null;
+    final isValid = showValidation && validator != null && error == null;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -509,6 +550,24 @@ class _AddBoatState extends State<AddBoat> {
                   fontWeight: FontWeight.w600,
                 ),
               ),
+            const Spacer(),
+            if (showValidation && validator != null)
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 180),
+                child: isValid
+                    ? const Icon(
+                        Icons.check_circle,
+                        key: ValueKey('ok'),
+                        color: Color(0xFF16A34A),
+                        size: 18,
+                      )
+                    : const Icon(
+                        Icons.cancel,
+                        key: ValueKey('no'),
+                        color: Color(0xFFDC2626),
+                        size: 18,
+                      ),
+              ),
           ],
         ),
 
@@ -517,7 +576,10 @@ class _AddBoatState extends State<AddBoat> {
         Container(
           decoration: BoxDecoration(
             border: Border.all(
-              color: Colors.grey.shade300,
+              color: error != null
+                  ? Colors.red
+                  : Colors.grey.shade300,
+              width: error != null ? 1.5 : 1,
             ),
             borderRadius: BorderRadius.circular(8),
           ),
@@ -528,7 +590,9 @@ class _AddBoatState extends State<AddBoat> {
               Icon(
                 icon,
                 size: 18,
-                color: Colors.grey[600],
+                color: error != null
+                    ? Colors.red
+                    : Colors.grey[600],
               ),
 
               const SizedBox(width: 10),
@@ -538,9 +602,12 @@ class _AddBoatState extends State<AddBoat> {
                   controller: controller,
                   readOnly: readOnly,
                   onTap: onTap,
-                  style: const TextStyle(
-                    fontSize: 14,
-                  ),
+                  inputFormatters: inputFormatters,
+                  onChanged: (_) {
+                    // Trigger rebuild so the tick updates
+                    setState(() {});
+                  },
+                  style: const TextStyle(fontSize: 14),
                   decoration: InputDecoration(
                     hintText: hint,
                     hintStyle: TextStyle(
@@ -548,8 +615,7 @@ class _AddBoatState extends State<AddBoat> {
                       color: Colors.grey[400],
                     ),
                     border: InputBorder.none,
-                    contentPadding:
-                    const EdgeInsets.symmetric(
+                    contentPadding: const EdgeInsets.symmetric(
                       vertical: 10,
                     ),
                   ),
@@ -568,6 +634,21 @@ class _AddBoatState extends State<AddBoat> {
             ],
           ),
         ),
+
+        if (error != null) ...[
+          const SizedBox(height: 4),
+          Padding(
+            padding: const EdgeInsets.only(left: 4),
+            child: Text(
+              error,
+              style: const TextStyle(
+                color: Color(0xFFDC2626),
+                fontSize: 11,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -1278,5 +1359,51 @@ class _AddBoatState extends State<AddBoat> {
         const Duration(seconds: 2),
       ),
     );
+  }
+}
+
+// ============================================================================
+// INPUT FORMATTERS
+// ============================================================================
+
+/// Letters, digits, and hyphens only — for Boat Registration No.
+/// Allows: IND-KA-2231, IND101, KA0014
+class RegNoFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    if (newValue.text.isEmpty) return newValue;
+    final regex = RegExp(r'^[a-zA-Z0-9\-]+$');
+    return regex.hasMatch(newValue.text) ? newValue : oldValue;
+  }
+}
+
+/// Letters and spaces only — for Boat Name.
+/// Allows: Sagar Kanya, Sea Queen
+class BoatNameFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    if (newValue.text.isEmpty) return newValue;
+    final regex = RegExp(r'^[a-zA-Z\s]+$');
+    return regex.hasMatch(newValue.text) ? newValue : oldValue;
+  }
+}
+
+/// Letters, digits, hyphens only — for License ID.
+/// Allows: FL-KA-77120, LIC2024001
+class LicenceIdFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    if (newValue.text.isEmpty) return newValue;
+    final regex = RegExp(r'^[a-zA-Z0-9\-]+$');
+    return regex.hasMatch(newValue.text) ? newValue : oldValue;
   }
 }

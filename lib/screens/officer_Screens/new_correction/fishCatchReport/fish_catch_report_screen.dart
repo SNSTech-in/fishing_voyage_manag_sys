@@ -333,7 +333,6 @@ class _FishCatchReportScreenState extends State<FishCatchReportScreen> {
       items: const [
         DropdownMenuItem(value: 'species', child: Text('Species')),
         DropdownMenuItem(value: 'port', child: Text('Port')),
-        DropdownMenuItem(value: 'district', child: Text('District')),
       ],
       onChanged: (v) {
         if (v == null) return;

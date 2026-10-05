@@ -196,9 +196,11 @@ class _EndTripScreenState extends State<EndTripScreen> {
       print('📍 Current Location: Lat: ${position.latitude}, Lng: ${position.longitude}');
     } catch (e) {
       print('❌ Error getting location: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red, duration: const Duration(seconds: 5)),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red, duration: const Duration(seconds: 5)),
+        );
+      }
     }
   }
 
@@ -211,7 +213,11 @@ class _EndTripScreenState extends State<EndTripScreen> {
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.light(primary: Color(0xFF1257C7), onPrimary: Colors.white, onSurface: Color(0xFF07347F)),
+            colorScheme: const ColorScheme.light(
+              primary: Color(0xFF1257C7),
+              onPrimary: Colors.white,
+              onSurface: Color(0xFF07347F),
+            ),
           ),
           child: child!,
         );
@@ -224,7 +230,11 @@ class _EndTripScreenState extends State<EndTripScreen> {
         builder: (context, child) {
           return Theme(
             data: Theme.of(context).copyWith(
-              colorScheme: const ColorScheme.light(primary: Color(0xFF1257C7), onPrimary: Colors.white, onSurface: Color(0xFF07347F)),
+              colorScheme: const ColorScheme.light(
+                primary: Color(0xFF1257C7),
+                onPrimary: Colors.white,
+                onSurface: Color(0xFF07347F),
+              ),
             ),
             child: child!,
           );
@@ -245,7 +255,6 @@ class _EndTripScreenState extends State<EndTripScreen> {
   }
 
   String _getFormattedDateTime(DateTime dateTime) {
-    // Format: YYYY-MM-DDTHH:MM:SS+05:30
     final String iso = dateTime.toIso8601String().split('.').first;
     return '$iso+05:30';
   }
@@ -264,6 +273,43 @@ class _EndTripScreenState extends State<EndTripScreen> {
       }
     });
   }
+
+  // ==========================================================================
+  // LABEL BUILDER — renders a red * on mandatory fields
+  // ==========================================================================
+
+  Widget _buildLabel({
+    required String text,
+    bool isRequired = false,
+  }) {
+    return RichText(
+      text: TextSpan(
+        children: [
+          TextSpan(
+            text: text,
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF07347F),
+            ),
+          ),
+          if (isRequired)
+            const TextSpan(
+              text: ' *',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFFDC2626),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // ==========================================================================
+  // OFFICER SELECTION DIALOG
+  // ==========================================================================
 
   Future<void> _showOfficerSelectionDialog() async {
     String searchQuery = '';
@@ -285,7 +331,14 @@ class _EndTripScreenState extends State<EndTripScreen> {
                   const Icon(Icons.shield_rounded, color: Color(0xFF1257C7), size: 24),
                   const SizedBox(width: 10),
                   const Expanded(
-                    child: Text('Select Officer', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF07347F))),
+                    child: Text(
+                      'Select Officer',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF07347F),
+                      ),
+                    ),
                   ),
                   IconButton(
                     onPressed: () => Navigator.pop(context),
@@ -310,17 +363,28 @@ class _EndTripScreenState extends State<EndTripScreen> {
                               final name = officer['officer_name']?.toString().toLowerCase() ?? '';
                               final designation = officer['designation']?.toString().toLowerCase() ?? '';
                               final department = officer['department']?.toString().toLowerCase() ?? '';
-                              return name.contains(searchQuery) || designation.contains(searchQuery) || department.contains(searchQuery);
+                              return name.contains(searchQuery) ||
+                                  designation.contains(searchQuery) ||
+                                  department.contains(searchQuery);
                             }).toList();
                           });
                         },
                         decoration: InputDecoration(
                           hintText: 'Search by name, designation or department',
-                          prefixIcon: Icon(Icons.search_rounded, color: Color(0xFF64748B), size: 20),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade300)),
-                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade300)),
-                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Color(0xFF1257C7))),
-                          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          prefixIcon: const Icon(Icons.search_rounded, color: Color(0xFF64748B), size: 20),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: BorderSide(color: Colors.grey.shade300),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: BorderSide(color: Colors.grey.shade300),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: const BorderSide(color: Color(0xFF1257C7)),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                           filled: true,
                           fillColor: Colors.white,
                         ),
@@ -329,65 +393,80 @@ class _EndTripScreenState extends State<EndTripScreen> {
                     const SizedBox(height: 10),
                     filteredOfficers.isEmpty
                         ? Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 30),
-                            child: Column(
-                              children: [
-                                Icon(Icons.search_off_rounded, size: 48, color: Colors.grey[400]),
-                                const SizedBox(height: 8),
-                                Text('No officers found', style: TextStyle(fontSize: 14, color: Colors.grey[500])),
-                              ],
-                            ),
-                          )
+                      padding: const EdgeInsets.symmetric(vertical: 30),
+                      child: Column(
+                        children: [
+                          Icon(Icons.search_off_rounded, size: 48, color: Colors.grey[400]),
+                          const SizedBox(height: 8),
+                          Text('No officers found', style: TextStyle(fontSize: 14, color: Colors.grey[500])),
+                        ],
+                      ),
+                    )
                         : ConstrainedBox(
-                            constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.45),
-                            child: ListView.builder(
-                              shrinkWrap: true,
-                              itemCount: filteredOfficers.length,
-                              itemBuilder: (context, index) {
-                                final officer = filteredOfficers[index];
-                                final officerId = officer['officer_id']?.toString() ?? '';
-                                final officerName = officer['officer_name']?.toString() ?? '';
-                                final designation = officer['designation']?.toString() ?? '';
-                                final department = officer['department']?.toString() ?? '';
-                                final isSelected = selectedOfficerId == officerId;
+                      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.45),
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: filteredOfficers.length,
+                        itemBuilder: (context, index) {
+                          final officer = filteredOfficers[index];
+                          final officerId = officer['officer_id']?.toString() ?? '';
+                          final officerName = officer['officer_name']?.toString() ?? '';
+                          final designation = officer['designation']?.toString() ?? '';
+                          final department = officer['department']?.toString() ?? '';
+                          final isSelected = selectedOfficerId == officerId;
 
-                                return ListTile(
-                                  leading: Container(
-                                    width: 42,
-                                    height: 42,
-                                    decoration: BoxDecoration(
-                                      color: isSelected ? const Color(0xFF1257C7) : const Color(0xFFF4F8FF),
-                                      borderRadius: BorderRadius.circular(10),
-                                    ),
-                                    child: Icon(Icons.person_rounded, color: isSelected ? Colors.white : const Color(0xFF1257C7), size: 22),
-                                  ),
-                                  title: Text(
-                                    officerName,
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w600,
-                                      color: isSelected ? const Color(0xFF1257C7) : const Color(0xFF07347F),
-                                    ),
-                                  ),
-                                  subtitle: Text('$designation • $department', style: TextStyle(fontSize: 12, color: Colors.grey[600])),
-                                  trailing: isSelected
-                                      ? Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                          decoration: BoxDecoration(color: const Color(0xFF1257C7), borderRadius: BorderRadius.circular(12)),
-                                          child: const Text('Selected', style: TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.w600)),
-                                        )
-                                      : null,
-                                  onTap: () {
-                                    setState(() {
-                                      selectedOfficerId = officerId;
-                                      selectedOfficerName = officerName;
-                                    });
-                                    Navigator.pop(context);
-                                  },
-                                );
-                              },
+                          return ListTile(
+                            leading: Container(
+                              width: 42,
+                              height: 42,
+                              decoration: BoxDecoration(
+                                color: isSelected
+                                    ? const Color(0xFF1257C7)
+                                    : const Color(0xFFF4F8FF),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Icon(
+                                Icons.person_rounded,
+                                color: isSelected ? Colors.white : const Color(0xFF1257C7),
+                                size: 22,
+                              ),
                             ),
-                          ),
+                            title: Text(
+                              officerName,
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: isSelected ? const Color(0xFF1257C7) : const Color(0xFF07347F),
+                              ),
+                            ),
+                            subtitle: Text(
+                              '$designation • $department',
+                              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                            ),
+                            trailing: isSelected
+                                ? Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF1257C7),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Text(
+                                'Selected',
+                                style: TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.w600),
+                              ),
+                            )
+                                : null,
+                            onTap: () {
+                              setState(() {
+                                selectedOfficerId = officerId;
+                                selectedOfficerName = officerName;
+                              });
+                              Navigator.pop(context);
+                            },
+                          );
+                        },
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -472,7 +551,9 @@ class _EndTripScreenState extends State<EndTripScreen> {
       final double longitude = location!['longitude']!;
       final String allCrewReturnedValue = allCrewReturned ? 'YES' : 'NO';
       final int notifiedOfficerId = int.parse(selectedOfficerId!);
-      final String tripEndRemarks = tripEndRemarksController.text.isNotEmpty ? tripEndRemarksController.text : 'Trip ended';
+      final String tripEndRemarks = tripEndRemarksController.text.isNotEmpty
+          ? tripEndRemarksController.text
+          : 'Trip ended';
 
       print('📤 End Trip Request:');
       print('  intimation_id: $intimationId');
@@ -500,11 +581,10 @@ class _EndTripScreenState extends State<EndTripScreen> {
           token: (await _db.getUserSession())?['access_token'] ?? '',
         );
       } catch (e) {
-        // Network error fallback
         response = {
           'success': true,
           'offline': true,
-          'message': 'Ended locally (Offline)'
+          'message': 'Ended locally (Offline)',
         };
       }
 
@@ -520,11 +600,9 @@ class _EndTripScreenState extends State<EndTripScreen> {
 
         await _db.updateVoyageStatus(widget.intimationId, 'completed');
 
-        // Stop tracking
         LocationService().stopTracking();
         await FlutterForegroundTask.stopService();
 
-        // Clear active voyage from SharedPreferences
         final prefs = await SharedPreferences.getInstance();
         await prefs.remove('active_voyage_id');
         await prefs.remove('active_voyage_no');
@@ -532,8 +610,12 @@ class _EndTripScreenState extends State<EndTripScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(isOffline ? '✅ Trip ended locally! (Will sync when online)' : '✅ Trip ended successfully!'),
-              backgroundColor: isOffline ? Colors.orange : Colors.green
+              content: Text(
+                isOffline
+                    ? '✅ Trip ended locally! (Will sync when online)'
+                    : '✅ Trip ended successfully!',
+              ),
+              backgroundColor: isOffline ? Colors.orange : Colors.green,
             ),
           );
           Navigator.pop(context, true);
@@ -543,7 +625,10 @@ class _EndTripScreenState extends State<EndTripScreen> {
         print('❌ Errors: ${response['errors']}');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(response['message']?.toString() ?? 'Failed to end trip'), backgroundColor: Colors.red),
+            SnackBar(
+              content: Text(response['message']?.toString() ?? 'Failed to end trip'),
+              backgroundColor: Colors.red,
+            ),
           );
         }
       }
@@ -576,338 +661,550 @@ class _EndTripScreenState extends State<EndTripScreen> {
           if (isLoading)
             const Padding(
               padding: EdgeInsets.all(14.0),
-              child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)),
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+              ),
             ),
         ],
       ),
       body: isPageLoading
           ? const Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  CircularProgressIndicator(color: Color(0xFF1257C7)),
-                  SizedBox(height: 16),
-                  Text('Loading...', style: TextStyle(color: Color(0xFF24365B), fontSize: 14)),
-                ],
-              ),
-            )
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(color: Color(0xFF1257C7)),
+            SizedBox(height: 16),
+            Text('Loading...', style: TextStyle(color: Color(0xFF24365B), fontSize: 14)),
+          ],
+        ),
+      )
           : Stack(
+        children: [
+          SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                SingleChildScrollView(
+                // ============================================================
+                // BOAT CARD
+                // ============================================================
+                Container(
+                  width: double.infinity,
                   padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.04),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Row(
                     children: [
                       Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(16),
+                        width: 44,
+                        height: 44,
                         decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 2))],
-                        ),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 44,
-                              height: 44,
-                              decoration: BoxDecoration(color: const Color(0xFF1257C7).withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
-                              child: const Icon(Icons.directions_boat_rounded, color: Color(0xFF1257C7), size: 24),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text('Boat', style: TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w500)),
-                                  Text(widget.boatName, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF07347F))),
-                                ],
-                              ),
-                            ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                              decoration: BoxDecoration(color: Colors.blue.withOpacity(0.1), borderRadius: BorderRadius.circular(6)),
-                              child: Text('ID: ${widget.intimationId}', style: TextStyle(fontSize: 11, color: Colors.blue[700], fontWeight: FontWeight.w600)),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.green.withOpacity(0.07),
+                          color: const Color(0xFF1257C7).withOpacity(0.1),
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: Colors.green.withOpacity(0.2)),
                         ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.location_on_rounded, color: Colors.green, size: 20),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text('📍 Location captured', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.green)),
-                                  Text(
-                                    location != null
-                                        ? 'Lat: ${location!['latitude']?.toStringAsFixed(6)}, Lng: ${location!['longitude']?.toStringAsFixed(6)}'
-                                        : 'Getting location...',
-                                    style: const TextStyle(fontSize: 11, color: Colors.green),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            if (location == null)
-                              const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.green)),
-                          ],
+                        child: const Icon(
+                          Icons.directions_boat_rounded,
+                          color: Color(0xFF1257C7),
+                          size: 24,
                         ),
                       ),
-                      const SizedBox(height: 16),
-                      const Text('Date of Return & Time', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF07347F))),
-                      const SizedBox(height: 8),
-                      InkWell(
-                        onTap: _selectDateTime,
-                        borderRadius: BorderRadius.circular(8),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            border: Border.all(color: Colors.grey.shade300),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(Icons.calendar_today_rounded, size: 18, color: Color(0xFF1257C7)),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  DateFormat('dd MMM yyyy, HH:mm').format(selectedDateTime),
-                                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Color(0xFF07347F)),
-                                ),
-                              ),
-                              const Icon(Icons.arrow_drop_down_rounded, color: Color(0xFF64748B)),
-                            ],
-                          ),
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Text(
-                          'Format: ${_getFormattedDateTime(selectedDateTime)}',
-                          style: TextStyle(fontSize: 10, color: Colors.grey[500], fontStyle: FontStyle.italic),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      const Text('All crew returned', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF07347F))),
-                      const SizedBox(height: 8),
-                      Container(
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.grey.shade300),
-                        ),
+                      const SizedBox(width: 12),
+                      Expanded(
                         child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            _buildRadioOption(
-                              label: 'Yes',
-                              isSelected: allCrewReturned,
-                              onTap: () => setState(() => allCrewReturned = true),
+                            const Text(
+                              'Boat',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Color(0xFF64748B),
+                                fontWeight: FontWeight.w500,
+                              ),
                             ),
-                            Container(height: 1, color: Colors.grey.shade200, margin: const EdgeInsets.symmetric(horizontal: 14)),
-                            _buildRadioOption(
-                              label: 'No',
-                              isSelected: !allCrewReturned,
-                              onTap: () => setState(() => allCrewReturned = false),
+                            Text(
+                              widget.boatName,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF07347F),
+                              ),
                             ),
                           ],
                         ),
                       ),
-                      if (!allCrewReturned && intimationCrew.isNotEmpty) ...[
-                        const SizedBox(height: 16),
-                        const Text('Select Crew with Return Status', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF07347F))),
-                        const SizedBox(height: 8),
-                        ...intimationCrew.map((crew) {
-                          final crewId = crew['crew_id']?.toString() ?? '';
-                          final crewName = crew['crew_name']?.toString() ?? 'Unknown';
-                          final selection = crewSelection[crewId] ?? {};
-                          final isSelected = selection['selected'] ?? false;
-
-                          return Container(
-                            margin: const EdgeInsets.only(bottom: 8),
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: isSelected ? Colors.red.withOpacity(0.05) : Colors.white,
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: isSelected ? Colors.red.withOpacity(0.3) : Colors.grey.shade200),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                InkWell(
-                                  onTap: () => _toggleCrewSelection(crewId),
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(vertical: 4),
-                                    child: Row(
-                                      children: [
-                                        Container(
-                                          width: 22,
-                                          height: 22,
-                                          decoration: BoxDecoration(
-                                            shape: BoxShape.circle,
-                                            border: Border.all(color: isSelected ? Colors.red : Colors.grey.shade400, width: 2),
-                                            color: isSelected ? Colors.red : Colors.transparent,
-                                          ),
-                                          child: isSelected ? const Icon(Icons.check, size: 14, color: Colors.white) : null,
-                                        ),
-                                        const SizedBox(width: 12),
-                                        Expanded(
-                                          child: Text(
-                                            crewName,
-                                            style: TextStyle(
-                                              fontSize: 14,
-                                              fontWeight: FontWeight.w500,
-                                              color: isSelected ? Colors.red[700] : const Color(0xFF07347F),
-                                            ),
-                                          ),
-                                        ),
-                                        if (isSelected)
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                            decoration: BoxDecoration(color: Colors.red.withOpacity(0.1), borderRadius: BorderRadius.circular(4)),
-                                            child: Text(
-                                              selection['returnStatus'] ?? 'MISSING',
-                                              style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Colors.red),
-                                            ),
-                                          ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                                if (isSelected) ...[
-                                  const SizedBox(height: 8),
-                                  DropdownButtonFormField<String>(
-                                    value: selection['returnStatus'] ?? 'MISSING',
-                                    decoration: InputDecoration(
-                                      labelText: 'Return Status',
-                                      labelStyle: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: BorderSide(color: Colors.grey.shade300)),
-                                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: BorderSide(color: Colors.grey.shade300)),
-                                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: BorderSide(color: Color(0xFF1257C7))),
-                                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                      filled: true,
-                                      fillColor: Colors.white,
-                                    ),
-                                    items: const [
-                                      DropdownMenuItem(value: 'MISSING', child: Text('Missing')),
-                                      DropdownMenuItem(value: 'HOSPITALISED', child: Text('Hospitalised')),
-                                      DropdownMenuItem(value: 'TRANSFERRED', child: Text('Transferred')),
-                                      DropdownMenuItem(value: 'DECEASED', child: Text('Deceased')),
-                                    ],
-                                    onChanged: (value) {
-                                      if (value != null) {
-                                        setState(() {
-                                          crewSelection[crewId]?['returnStatus'] = value;
-                                        });
-                                      }
-                                    },
-                                  ),
-                                  const SizedBox(height: 8),
-                                  TextField(
-                                    onChanged: (value) {
-                                      crewSelection[crewId]?['remarks'] = value;
-                                    },
-                                    decoration: InputDecoration(
-                                      labelText: 'Remarks',
-                                      labelStyle: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-                                      hintText: 'Enter remarks (optional)',
-                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: BorderSide(color: Colors.grey.shade300)),
-                                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: BorderSide(color: Colors.grey.shade300)),
-                                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: BorderSide(color: Color(0xFF1257C7))),
-                                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                                      filled: true,
-                                      fillColor: Colors.white,
-                                    ),
-                                    maxLines: 2,
-                                  ),
-                                ],
-                              ],
-                            ),
-                          );
-                        }),
-                        const SizedBox(height: 16),
-                      ],
-                      const Text('Notified Officer', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF07347F))),
-                      const SizedBox(height: 8),
-                      InkWell(
-                        onTap: _showOfficerSelectionDialog,
-                        borderRadius: BorderRadius.circular(8),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            border: Border.all(color: Colors.grey.shade300),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(Icons.person_rounded, size: 18, color: Color(0xFF1257C7)),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  selectedOfficerName ?? 'Select officer',
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    color: selectedOfficerName != null ? const Color(0xFF07347F) : Colors.grey,
-                                    fontWeight: selectedOfficerName != null ? FontWeight.w500 : FontWeight.normal,
-                                  ),
-                                ),
-                              ),
-                              const Icon(Icons.arrow_drop_down_rounded, color: Color(0xFF64748B)),
-                            ],
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          'ID: ${widget.intimationId}',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.blue[700],
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                       ),
-                      const SizedBox(height: 16),
-                      const Text('Trip End Remarks', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF07347F))),
-                      const SizedBox(height: 8),
-                      TextField(
-                        controller: tripEndRemarksController,
-                        decoration: InputDecoration(
-                          hintText: 'Enter trip end remarks (optional)',
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey.shade300)),
-                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey.shade300)),
-                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Color(0xFF1257C7))),
-                          filled: true,
-                          fillColor: Colors.white,
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                        ),
-                        maxLines: 2,
-                      ),
-                      const SizedBox(height: 24),
-                      SizedBox(
-                        width: double.infinity,
-                        height: 50,
-                        child: ElevatedButton(
-                          onPressed: isLoading ? null : _submitEndTrip,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF1257C7),
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                            elevation: 0,
-                          ),
-                          child: isLoading
-                              ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                              : const Text('Save', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
                     ],
                   ),
                 ),
+
+                const SizedBox(height: 16),
+
+                // ============================================================
+                // LOCATION CARD
+                // ============================================================
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withOpacity(0.07),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.green.withOpacity(0.2)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.location_on_rounded, color: Colors.green, size: 20),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              '📍 Location captured',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.green,
+                              ),
+                            ),
+                            Text(
+                              location != null
+                                  ? 'Lat: ${location!['latitude']?.toStringAsFixed(6)}, Lng: ${location!['longitude']?.toStringAsFixed(6)}'
+                                  : 'Getting location...',
+                              style: const TextStyle(fontSize: 11, color: Colors.green),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (location == null)
+                        const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.green),
+                        ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+
+                // ============================================================
+                // DATE OF RETURN & TIME *
+                // ============================================================
+                _buildLabel(text: 'Date of Return & Time', isRequired: true),
+
+                const SizedBox(height: 8),
+
+                InkWell(
+                  onTap: _selectDateTime,
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      border: Border.all(color: Colors.grey.shade300),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.calendar_today_rounded,
+                          size: 18,
+                          color: Color(0xFF1257C7),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            DateFormat('dd MMM yyyy, HH:mm').format(selectedDateTime),
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                              color: Color(0xFF07347F),
+                            ),
+                          ),
+                        ),
+                        const Icon(Icons.arrow_drop_down_rounded, color: Color(0xFF64748B)),
+                      ],
+                    ),
+                  ),
+                ),
+
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    'Format: ${_getFormattedDateTime(selectedDateTime)}',
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: Colors.grey[500],
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+
+                // ============================================================
+                // ALL CREW RETURNED *
+                // ============================================================
+                _buildLabel(text: 'All crew returned', isRequired: true),
+
+                const SizedBox(height: 8),
+
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  child: Column(
+                    children: [
+                      _buildRadioOption(
+                        label: 'Yes',
+                        isSelected: allCrewReturned,
+                        onTap: () => setState(() => allCrewReturned = true),
+                      ),
+                      Container(
+                        height: 1,
+                        color: Colors.grey.shade200,
+                        margin: const EdgeInsets.symmetric(horizontal: 14),
+                      ),
+                      _buildRadioOption(
+                        label: 'No',
+                        isSelected: !allCrewReturned,
+                        onTap: () => setState(() => allCrewReturned = false),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // ============================================================
+                // CREW RETURN STATUS (only when allCrewReturned == false)
+                // ============================================================
+                if (!allCrewReturned && intimationCrew.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Select Crew with Return Status',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF07347F),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ...intimationCrew.map((crew) {
+                    final crewId = crew['crew_id']?.toString() ?? '';
+                    final crewName = crew['crew_name']?.toString() ?? 'Unknown';
+                    final selection = crewSelection[crewId] ?? {};
+                    final isSelected = selection['selected'] ?? false;
+
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: isSelected ? Colors.red.withOpacity(0.05) : Colors.white,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: isSelected
+                              ? Colors.red.withOpacity(0.3)
+                              : Colors.grey.shade200,
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          InkWell(
+                            onTap: () => _toggleCrewSelection(crewId),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 4),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 22,
+                                    height: 22,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: isSelected ? Colors.red : Colors.grey.shade400,
+                                        width: 2,
+                                      ),
+                                      color: isSelected ? Colors.red : Colors.transparent,
+                                    ),
+                                    child: isSelected
+                                        ? const Icon(Icons.check, size: 14, color: Colors.white)
+                                        : null,
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(
+                                      crewName,
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w500,
+                                        color: isSelected ? Colors.red[700] : const Color(0xFF07347F),
+                                      ),
+                                    ),
+                                  ),
+                                  if (isSelected)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: Colors.red.withOpacity(0.1),
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: Text(
+                                        selection['returnStatus'] ?? 'MISSING',
+                                        style: const TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.red,
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          if (isSelected) ...[
+                            const SizedBox(height: 8),
+                            DropdownButtonFormField<String>(
+                              value: selection['returnStatus'] ?? 'MISSING',
+                              decoration: InputDecoration(
+                                labelText: 'Return Status',
+                                labelStyle: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(6),
+                                  borderSide: BorderSide(color: Colors.grey.shade300),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(6),
+                                  borderSide: BorderSide(color: Colors.grey.shade300),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(6),
+                                  borderSide: const BorderSide(color: Color(0xFF1257C7)),
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                filled: true,
+                                fillColor: Colors.white,
+                              ),
+                              items: const [
+                                DropdownMenuItem(value: 'MISSING', child: Text('Missing')),
+                                DropdownMenuItem(value: 'HOSPITALISED', child: Text('Hospitalised')),
+                                DropdownMenuItem(value: 'TRANSFERRED', child: Text('Transferred')),
+                                DropdownMenuItem(value: 'DECEASED', child: Text('Deceased')),
+                              ],
+                              onChanged: (value) {
+                                if (value != null) {
+                                  setState(() {
+                                    crewSelection[crewId]?['returnStatus'] = value;
+                                  });
+                                }
+                              },
+                            ),
+                            const SizedBox(height: 8),
+                            TextField(
+                              onChanged: (value) {
+                                crewSelection[crewId]?['remarks'] = value;
+                              },
+                              decoration: InputDecoration(
+                                labelText: 'Remarks',
+                                labelStyle: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                                hintText: 'Enter remarks (optional)',
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(6),
+                                  borderSide: BorderSide(color: Colors.grey.shade300),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(6),
+                                  borderSide: BorderSide(color: Colors.grey.shade300),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(6),
+                                  borderSide: const BorderSide(color: Color(0xFF1257C7)),
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                filled: true,
+                                fillColor: Colors.white,
+                              ),
+                              maxLines: 2,
+                            ),
+                          ],
+                        ],
+                      ),
+                    );
+                  }),
+                  const SizedBox(height: 16),
+                ],
+
+                // ============================================================
+                // NOTIFIED OFFICER *  ← mandatory
+                // ============================================================
+                _buildLabel(text: 'Notified Officer', isRequired: true),
+
+                const SizedBox(height: 8),
+
+                InkWell(
+                  onTap: _showOfficerSelectionDialog,
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      border: Border.all(
+                        color: selectedOfficerName != null
+                            ? const Color(0xFF1257C7).withOpacity(0.4)
+                            : Colors.grey.shade300,
+                        width: selectedOfficerName != null ? 1.5 : 1,
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.person_rounded, size: 18, color: Color(0xFF1257C7)),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            selectedOfficerName ?? 'Select officer',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: selectedOfficerName != null
+                                  ? const Color(0xFF07347F)
+                                  : Colors.grey,
+                              fontWeight: selectedOfficerName != null
+                                  ? FontWeight.w500
+                                  : FontWeight.normal,
+                            ),
+                          ),
+                        ),
+                        const Icon(Icons.arrow_drop_down_rounded, color: Color(0xFF64748B)),
+                      ],
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+
+                // ============================================================
+                // TRIP END REMARKS (optional)
+                // ============================================================
+                const Text(
+                  'Trip End Remarks',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF07347F),
+                  ),
+                ),
+
+                const SizedBox(height: 8),
+
+                TextField(
+                  controller: tripEndRemarksController,
+                  decoration: InputDecoration(
+                    hintText: 'Enter trip end remarks (optional)',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: Colors.grey.shade300),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: Colors.grey.shade300),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: Color(0xFF1257C7)),
+                    ),
+                    filled: true,
+                    fillColor: Colors.white,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  ),
+                  maxLines: 2,
+                ),
+
+                const SizedBox(height: 16),
+
+                // ============================================================
+                // HINT — shown while Save is disabled
+                // ============================================================
+                if (selectedOfficerId == null || location == null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Row(
+                      children: const [
+                        Icon(Icons.info_outline_rounded, size: 14, color: Color(0xFF64748B)),
+                        SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'Fill all mandatory fields (*) to enable Save.',
+                            style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                const SizedBox(height: 8),
+
+                // ============================================================
+                // SAVE BUTTON — disabled until officer + location are set
+                // ============================================================
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton(
+                    onPressed: (isLoading || selectedOfficerId == null || location == null)
+                        ? null
+                        : _submitEndTrip,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF1257C7),
+                      foregroundColor: Colors.white,
+                      disabledBackgroundColor: Colors.grey[400],
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      elevation: 0,
+                    ),
+                    child: isLoading
+                        ? const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                        : const Text(
+                      'Save',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 16),
               ],
             ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -927,13 +1224,23 @@ class _EndTripScreenState extends State<EndTripScreen> {
               height: 22,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                border: Border.all(color: isSelected ? const Color(0xFF1257C7) : Colors.grey.shade400, width: 2),
+                border: Border.all(
+                  color: isSelected ? const Color(0xFF1257C7) : Colors.grey.shade400,
+                  width: 2,
+                ),
                 color: isSelected ? const Color(0xFF1257C7) : Colors.transparent,
               ),
               child: isSelected ? const Icon(Icons.check, size: 14, color: Colors.white) : null,
             ),
             const SizedBox(width: 12),
-            Text(label, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Color(0xFF07347F))),
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: Color(0xFF07347F),
+              ),
+            ),
           ],
         ),
       ),

@@ -1,3 +1,5 @@
+// lib/officer/screens/citings_summary_screen.dart
+
 import 'package:flutter/material.dart';
 import '../../../../services/api_services/officer_api_service.dart';
 import 'citings_details_sheet.dart';
@@ -26,6 +28,7 @@ class _CitingsSummaryScreenState extends State<CitingsSummaryScreen> {
   static const Color _info = Color(0xFF0891B2);
 
   // Data
+  List<Map<String, dynamic>> _rawItems = [];
   List<Map<String, dynamic>> _items = [];
   bool _loading = true;
   bool _loadingCounts = false;
@@ -39,7 +42,7 @@ class _CitingsSummaryScreenState extends State<CitingsSummaryScreen> {
   late DateTime _fromDate;
   late DateTime _toDate;
 
-  // Counts (kept for fallback / all-count reference)
+  // Counts
   int _allCount = 0;
   final Map<String, int> _typeCounts = {};
   final Set<String> _discoveredTypes = {};
@@ -62,15 +65,115 @@ class _CitingsSummaryScreenState extends State<CitingsSummaryScreen> {
     super.dispose();
   }
 
-  /// Fetch ALL items (paginated) once to discover types and totals.
+  // ═══════════════════════════════════════════════════════════
+  // DATE HELPERS
+  // ═══════════════════════════════════════════════════════════
+  String? _fmt(DateTime? d) {
+    if (d == null) return null;
+    final m = d.month.toString().padLeft(2, '0');
+    final day = d.day.toString().padLeft(2, '0');
+    return '${d.year}-$m-$day';
+  }
+
+  DateTime? _citingDate(Map<String, dynamic> v) {
+    // ✅ Try the columns the API most likely filters on first,
+    //    then fall back to creation timestamps.
+    final candidates = [
+      v['citing_datetime'],
+      v['citing_date'],
+      v['sighted_at'],
+      v['reported_at'],
+      v['created_at'],
+      v['created_date'],
+    ];
+    for (final raw in candidates) {
+      if (raw == null) continue;
+      final s = raw.toString().trim();
+      if (s.isEmpty) continue;
+      try {
+        return DateTime.parse(s.replaceFirst(' ', 'T')).toLocal();
+      } catch (_) {
+        try {
+          final parts = s.split(' ').first.split('-');
+          if (parts.length == 3) {
+            return DateTime(
+              int.parse(parts[0]),
+              int.parse(parts[1]),
+              int.parse(parts[2]),
+            );
+          }
+        } catch (_) {}
+      }
+    }
+    return null;
+  }
+
+  bool _inDateRange(DateTime? d) {
+    if (d == null) return false;
+    final from = DateTime(_fromDate.year, _fromDate.month, _fromDate.day);
+    final to = DateTime(_toDate.year, _toDate.month, _toDate.day)
+        .add(const Duration(days: 1))
+        .subtract(const Duration(seconds: 1));
+    return !d.isBefore(from) && !d.isAfter(to);
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // LOCAL FILTER (search + type only — dates handled by _bootstrap)
+  // ═══════════════════════════════════════════════════════════
+  void _applyLocalFilters() {
+    final q = _searchCtrl.text.trim().toLowerCase();
+
+    final filtered = _rawItems.where((v) {
+      if (!_inDateRange(_citingDate(v))) return false;
+      if (_typeFilter != null && _typeOf(v) != _typeFilter) return false;
+
+      if (q.isNotEmpty) {
+        final haystack = [
+          v['citing_ref_no'],
+          v['reference_no'],
+          v['boat_reg_no'],
+          v['boat_name'],
+          v['reported_by_name'],
+          v['citing_type'],
+          v['illegal_activity_type'],
+          v['remarks'],
+          v['citing_status'],
+          v['photo_path'],
+          v['latitude'],
+          v['longitude'],
+        ]
+            .where((e) => e != null)
+            .map((e) => e.toString().toLowerCase())
+            .join(' ');
+        if (!haystack.contains(q)) return false;
+      }
+
+      return true;
+    }).toList();
+
+    setState(() {
+      _items = filtered;
+    });
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // BOOTSTRAP — fetches for the CURRENT _fromDate / _toDate
+  // ═══════════════════════════════════════════════════════════
   Future<void> _bootstrap() async {
+    // ✅ Clear stale data so old rows don't linger while a
+    //    new fetch is in flight (or if it fails).
     setState(() {
       _loading = true;
       _loadingCounts = true;
       _error = null;
+      _rawItems = [];
+      _items = [];
+      _allCount = 0;
+      _typeCounts.clear();
+      _discoveredTypes.clear();
+      _page = 1;
     });
 
-    // ── Paginate through ALL citings for the date range ──
     final allItems = <Map<String, dynamic>>[];
     int page = 1;
     int? serverTotal;
@@ -107,14 +210,17 @@ class _CitingsSummaryScreenState extends State<CitingsSummaryScreen> {
 
       if (list.isEmpty) {
         hasMore = false;
-      } else if (serverTotal != null && allItems.length >= serverTotal) {
+      } else if (list.length < pageSize) {
         hasMore = false;
       } else {
-        page++;
+        if (serverTotal != null && allItems.length >= serverTotal) {
+          hasMore = false;
+        } else {
+          page++;
+        }
       }
     }
 
-    // ── Discover types and local counts ──
     final discovered = <String>{};
     final counts = <String, int>{};
     for (final v in allItems) {
@@ -124,44 +230,22 @@ class _CitingsSummaryScreenState extends State<CitingsSummaryScreen> {
       counts[t] = (counts[t] ?? 0) + 1;
     }
 
-    // ── Verify each type with a lightweight server call ──
-    for (final t in discovered) {
-      final res = await _api.fetchCitings(
-        type: t,
-        fromDate: _fmt(_fromDate),
-        toDate: _fmt(_toDate),
-        page: 1,
-        limit: 1,
-      );
-      if (!mounted) return;
-      if (res['success'] == true) {
-        final meta = OfficersApiService.extractPagination(res);
-        counts[t] = meta['total'] ?? counts[t] ?? 0;
-      }
-    }
-
     if (!mounted) return;
 
     setState(() {
-      _allCount = serverTotal ?? allItems.length;
+      _allCount = allItems.length;
+      _rawItems = allItems;
       _typeCounts
         ..clear()
         ..addAll(counts);
       _discoveredTypes
         ..clear()
         ..addAll(discovered);
-
-      // Slice the list based on active filter (if any)
-      _items = _typeFilter == null
-          ? allItems.take(_limit).toList()
-          : allItems
-          .where((v) => _typeOf(v) == _typeFilter)
-          .take(_limit)
-          .toList();
-
       _loading = false;
       _loadingCounts = false;
     });
+
+    _applyLocalFilters();
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -218,20 +302,42 @@ class _CitingsSummaryScreenState extends State<CitingsSummaryScreen> {
     return list;
   }
 
-  int _countFor(String t) => _typeCounts[t] ?? 0;
-
-  /// Count of items of this type **currently loaded in _items**.
-  /// This is what the square button displays so it always matches the list.
+  /// Tile counts respect the current search AND the current date range.
   int _liveCount(String? t) {
-    if (t == null) return _items.length;
-    return _items.where((v) => _typeOf(v) == t).length;
-  }
+    final q = _searchCtrl.text.trim().toLowerCase();
 
-  String? _fmt(DateTime? d) {
-    if (d == null) return null;
-    final m = d.month.toString().padLeft(2, '0');
-    final day = d.day.toString().padLeft(2, '0');
-    return '${d.year}-$m-$day';
+    bool matchesSearch(Map<String, dynamic> v) {
+      if (q.isEmpty) return true;
+      final haystack = [
+        v['citing_ref_no'],
+        v['reference_no'],
+        v['boat_reg_no'],
+        v['boat_name'],
+        v['reported_by_name'],
+        v['citing_type'],
+        v['illegal_activity_type'],
+        v['remarks'],
+        v['citing_status'],
+        v['photo_path'],
+        v['latitude'],
+        v['longitude'],
+      ]
+          .where((e) => e != null)
+          .map((e) => e.toString().toLowerCase())
+          .join(' ');
+      return haystack.contains(q);
+    }
+
+    final dateFiltered =
+    _rawItems.where((v) => _inDateRange(_citingDate(v))).toList();
+
+    if (t == null) {
+      return dateFiltered.where(matchesSearch).length;
+    }
+
+    return dateFiltered
+        .where((v) => _typeOf(v) == t && matchesSearch(v))
+        .length;
   }
 
   String _pretty(String s) {
@@ -265,68 +371,6 @@ class _CitingsSummaryScreenState extends State<CitingsSummaryScreen> {
     if (v is num) return v.toInt();
     if (v is String) return int.tryParse(v) ?? fallback;
     return fallback;
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  // LOAD LIST (filtered) — server-side filter by type
-  // ═══════════════════════════════════════════════════════════
-  Future<void> _load({bool reset = false}) async {
-    if (reset) _page = 1;
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-
-    final res = await _api.fetchCitings(
-      search: _searchCtrl.text.trim(),
-      type: _typeFilter,
-      fromDate: _fmt(_fromDate),
-      toDate: _fmt(_toDate),
-      page: _page,
-      limit: _limit,
-    );
-
-    if (!mounted) return;
-
-    if (res['success'] == true) {
-      final list = OfficersApiService.extractList(res);
-      setState(() {
-        _items = list;
-        _loading = false;
-      });
-    } else {
-      setState(() {
-        _error = res['message']?.toString() ?? 'Failed to load Citings';
-        _loading = false;
-      });
-    }
-  }
-
-  List<Map<String, dynamic>> get _filteredItems {
-    // When a type filter is active, only show that type (defensive)
-    var base = _items;
-    if (_typeFilter != null) {
-      base = base.where((v) => _typeOf(v) == _typeFilter).toList();
-    }
-
-    final q = _searchCtrl.text.trim().toLowerCase();
-    if (q.isEmpty) return base;
-
-    return base.where((v) {
-      final ref = (v['citing_ref_no'] ?? '').toString().toLowerCase();
-      final boatReg = (v['boat_reg_no'] ?? '').toString().toLowerCase();
-      final reportedBy =
-      (v['reported_by_name'] ?? '').toString().toLowerCase();
-      final type = (v['citing_type'] ?? '').toString().toLowerCase();
-      final remarks = (v['remarks'] ?? '').toString().toLowerCase();
-      final intRef = (v['reference_no'] ?? '').toString().toLowerCase();
-      return ref.contains(q) ||
-          boatReg.contains(q) ||
-          reportedBy.contains(q) ||
-          type.contains(q) ||
-          remarks.contains(q) ||
-          intRef.contains(q);
-    }).toList();
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -378,7 +422,6 @@ class _CitingsSummaryScreenState extends State<CitingsSummaryScreen> {
     );
   }
 
-  // ── Date Row ─────────────────────────────────────────────
   Widget _dateRow() {
     return Container(
       color: Colors.white,
@@ -396,13 +439,13 @@ class _CitingsSummaryScreenState extends State<CitingsSummaryScreen> {
                   firstDate: DateTime(2020),
                   lastDate: DateTime(2100),
                 );
-                if (d != null) {
-                  setState(() {
-                    _fromDate = d;
-                    _typeFilter = null;
-                  });
-                  await _bootstrap();
-                }
+                if (d == null) return;
+                setState(() {
+                  _fromDate = d;
+                  _typeFilter = null;
+                });
+                // ✅ RE-FETCH from the server with the new range.
+                await _bootstrap();
               },
             ),
           ),
@@ -418,13 +461,13 @@ class _CitingsSummaryScreenState extends State<CitingsSummaryScreen> {
                   firstDate: DateTime(2020),
                   lastDate: DateTime(2100),
                 );
-                if (d != null) {
-                  setState(() {
-                    _toDate = d;
-                    _typeFilter = null;
-                  });
-                  await _bootstrap();
-                }
+                if (d == null) return;
+                setState(() {
+                  _toDate = d;
+                  _typeFilter = null;
+                });
+                // ✅ RE-FETCH from the server with the new range.
+                await _bootstrap();
               },
             ),
           ),
@@ -443,6 +486,7 @@ class _CitingsSummaryScreenState extends State<CitingsSummaryScreen> {
                     _fromDate = now.subtract(const Duration(days: 30));
                     _typeFilter = null;
                   });
+                  // ✅ RE-FETCH after reset too.
                   await _bootstrap();
                 },
                 child: Container(
@@ -513,14 +557,13 @@ class _CitingsSummaryScreenState extends State<CitingsSummaryScreen> {
     );
   }
 
-  // ── Search Bar ───────────────────────────────────────────
   Widget _searchBar() {
     return Container(
       color: Colors.white,
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
       child: TextField(
         controller: _searchCtrl,
-        onChanged: (_) => setState(() {}),
+        onChanged: (_) => _applyLocalFilters(),
         textInputAction: TextInputAction.search,
         decoration: InputDecoration(
           hintText: 'Search ref / boat / reporter / type...',
@@ -531,7 +574,7 @@ class _CitingsSummaryScreenState extends State<CitingsSummaryScreen> {
             icon: const Icon(Icons.close_rounded, size: 18),
             onPressed: () {
               _searchCtrl.clear();
-              setState(() {});
+              _applyLocalFilters();
             },
           ),
           border: OutlineInputBorder(
@@ -545,9 +588,6 @@ class _CitingsSummaryScreenState extends State<CitingsSummaryScreen> {
     );
   }
 
-  // ── Type Square Buttons ──────────────────────────────────
-  // Always show All + every discovered type.
-  // Count on each tile = number of that type in the loaded list.
   Widget _typeSquares() {
     final types = _visibleTypes;
 
@@ -557,7 +597,6 @@ class _CitingsSummaryScreenState extends State<CitingsSummaryScreen> {
 
     final tiles = <Widget>[];
 
-    // "All" tile — count = loaded items
     tiles.add(
       _typeSquare(
         label: 'All',
@@ -569,12 +608,11 @@ class _CitingsSummaryScreenState extends State<CitingsSummaryScreen> {
         onTap: () {
           if (_typeFilter == null) return;
           setState(() => _typeFilter = null);
-          _load(reset: true);
+          _applyLocalFilters();
         },
       ),
     );
 
-    // Every discovered type is always shown.
     for (final t in types) {
       tiles.add(const SizedBox(width: 10));
       tiles.add(
@@ -586,13 +624,8 @@ class _CitingsSummaryScreenState extends State<CitingsSummaryScreen> {
           selected: _typeFilter == t,
           loading: _loadingCounts,
           onTap: () {
-            if (_typeFilter == t) {
-              // Tapping the active tile clears the filter
-              setState(() => _typeFilter = null);
-            } else {
-              setState(() => _typeFilter = t);
-            }
-            _load(reset: true);
+            setState(() => _typeFilter = _typeFilter == t ? null : t);
+            _applyLocalFilters();
           },
         ),
       );
@@ -702,7 +735,6 @@ class _CitingsSummaryScreenState extends State<CitingsSummaryScreen> {
     );
   }
 
-  // ── Body ─────────────────────────────────────────────────
   Widget _body() {
     if (_loading) {
       return const Center(child: CircularProgressIndicator());
@@ -725,7 +757,7 @@ class _CitingsSummaryScreenState extends State<CitingsSummaryScreen> {
       );
     }
 
-    final items = _filteredItems;
+    final items = _items;
 
     if (items.isEmpty) {
       return const Center(
@@ -742,7 +774,6 @@ class _CitingsSummaryScreenState extends State<CitingsSummaryScreen> {
     );
   }
 
-  // ── Citing Tile ──────────────────────────────────────────
   Widget _citingTile(Map<String, dynamic> v) {
     final ref = v['citing_ref_no']?.toString() ?? '—';
     final intRef = v['reference_no']?.toString() ?? '';
@@ -811,7 +842,6 @@ class _CitingsSummaryScreenState extends State<CitingsSummaryScreen> {
                 ],
               ),
               const SizedBox(height: 6),
-
               Row(
                 children: [
                   const Icon(Icons.directions_boat_rounded,
@@ -841,7 +871,6 @@ class _CitingsSummaryScreenState extends State<CitingsSummaryScreen> {
                 ],
               ),
               const SizedBox(height: 6),
-
               Row(
                 children: [
                   const Icon(Icons.schedule_rounded,
@@ -859,7 +888,6 @@ class _CitingsSummaryScreenState extends State<CitingsSummaryScreen> {
                   ),
                 ],
               ),
-
               if (intRef.isNotEmpty) ...[
                 const SizedBox(height: 4),
                 Row(
@@ -880,11 +908,9 @@ class _CitingsSummaryScreenState extends State<CitingsSummaryScreen> {
                   ],
                 ),
               ],
-
               const SizedBox(height: 10),
               const Divider(height: 1, color: _divider),
               const SizedBox(height: 8),
-
               Wrap(
                 spacing: 14,
                 runSpacing: 6,
@@ -918,7 +944,6 @@ class _CitingsSummaryScreenState extends State<CitingsSummaryScreen> {
                     ),
                 ],
               ),
-
               if (remarks.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 Container(
@@ -949,9 +974,7 @@ class _CitingsSummaryScreenState extends State<CitingsSummaryScreen> {
                   ),
                 ),
               ],
-
               const SizedBox(height: 8),
-
               Align(
                 alignment: Alignment.centerRight,
                 child: TextButton.icon(
@@ -1012,9 +1035,6 @@ class _CitingsSummaryScreenState extends State<CitingsSummaryScreen> {
     );
   }
 
-  // ═══════════════════════════════════════════════════════════
-  // OPEN DETAILS SHEET
-  // ═══════════════════════════════════════════════════════════
   void _openDetails(Map<String, dynamic> v) {
     final citingId = _i(v['citing_id']);
     if (citingId == 0) {

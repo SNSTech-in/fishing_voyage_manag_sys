@@ -18,6 +18,7 @@ class _BoatOwnerLoginScreenState extends State<BoatOwnerLoginScreen> {
 
   bool otpSent = false;
   bool isLoading = false;
+  bool isResending = false;
 
   static const Color primaryBlue = Color(0xFF1257C7);
   static const Color darkBlue = Color(0xFF07347F);
@@ -603,17 +604,26 @@ class _BoatOwnerLoginScreenState extends State<BoatOwnerLoginScreen> {
           ),
 
           InkWell(
-            onTap: isLoading ? null : _resendOtp,
-            child: const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 12),
-              child: Text(
-                'Resend',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: primaryBlue,
-                ),
-              ),
+            onTap: (isLoading || isResending) ? null : _resendOtp,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: isResending
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: primaryBlue,
+                      ),
+                    )
+                  : const Text(
+                      'Resend',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: primaryBlue,
+                      ),
+                    ),
             ),
           ),
         ],
@@ -1056,7 +1066,7 @@ class _BoatOwnerLoginScreenState extends State<BoatOwnerLoginScreen> {
     FocusScope.of(context).unfocus();
 
     setState(() {
-      isLoading = true;
+      isResending = true;
     });
 
     try {
@@ -1069,68 +1079,74 @@ class _BoatOwnerLoginScreenState extends State<BoatOwnerLoginScreen> {
       if (!mounted) return;
 
       if (response['success'] == true) {
-// ====================================================================
-// AGAIN READ:
-// response['data']['dev_otp']
-// ====================================================================
-
+        // Try multiple possible locations for the OTP
         String devOtp = '';
-
         final data = response['data'];
 
         if (data is Map) {
-          devOtp = data['dev_otp']?.toString().trim() ?? '';
+          devOtp = data['dev_otp']?.toString().trim() ??
+              data['otp']?.toString().trim() ??
+              '';
+        }
+        // Also check top-level (some backends return it there)
+        if (devOtp.isEmpty) {
+          devOtp = response['dev_otp']?.toString().trim() ?? '';
         }
 
-        print('🔐 RESEND DEV OTP: $devOtp');
+        print('🔐 RESEND DEV OTP: "$devOtp"');
+
+        // Clear the old OTP first, so the user sees a fresh value arrive
+        otpController.text = '';
+        otpController.selection = TextSelection.fromPosition(
+          const TextPosition(offset: 0),
+        );
+
+        // Brief delay so the clear is visible
+        await Future.delayed(const Duration(milliseconds: 120));
 
         if (devOtp.isNotEmpty) {
-// Replace old OTP
+          // Fill the new OTP
           otpController.text = devOtp;
-
-          otpController.selection =
-              TextSelection.fromPosition(
-                TextPosition(
-                  offset: otpController.text.length,
-                ),
-              );
+          otpController.selection = TextSelection.fromPosition(
+            TextPosition(offset: otpController.text.length),
+          );
 
           setState(() {
-            isLoading = false;
+            isResending = false;
             otpSent = true;
           });
 
-          print(
-            '✅ New OTP automatically filled: $devOtp',
-          );
-
-          _showSuccess(
-            'New OTP filled automatically',
-          );
+          print('✅ New OTP automatically filled: $devOtp');
+          _showSuccess('New OTP filled: $devOtp');
         } else {
+          // API responded success but no OTP — either same OTP was reused
+          // or the backend didn't include it. Give the user a clear message.
           setState(() {
-            isLoading = false;
+            isResending = false;
+            otpSent = true;
           });
 
-          _showError(
-            'New OTP was not found in API response',
+          print('⚠️ Resend succeeded but no OTP returned. Backend may be '
+              'reusing the previous OTP.');
+
+          _showSuccess(
+            'OTP resent. If you had a previous OTP, it is still valid.',
           );
         }
       } else {
         setState(() {
-          isLoading = false;
+          isResending = false;
         });
 
         _showError(
-          response['message'] ??
-              'Failed to resend OTP',
+          response['message'] ?? 'Failed to resend OTP',
         );
       }
     } catch (e) {
       if (!mounted) return;
 
       setState(() {
-        isLoading = false;
+        isResending = false;
       });
 
       print('❌ Resend OTP Error: $e');

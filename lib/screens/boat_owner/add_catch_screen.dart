@@ -40,7 +40,6 @@ class _AddCatchScreenState extends State<AddCatchScreen> {
 
   @override
   void dispose() {
-    // Dispose all controllers
     for (var controller in weightControllers) {
       controller.dispose();
     }
@@ -99,7 +98,6 @@ class _AddCatchScreenState extends State<AddCatchScreen> {
   // ============================================================
 
   void _addNewItem() {
-    // Create new controllers
     weightControllers.add(TextEditingController());
     quantityControllers.add(TextEditingController());
     remarksControllers.add(TextEditingController());
@@ -120,7 +118,6 @@ class _AddCatchScreenState extends State<AddCatchScreen> {
   // ============================================================
 
   void _removeItem(int index) {
-    // Dispose controllers
     weightControllers[index].dispose();
     quantityControllers[index].dispose();
     remarksControllers[index].dispose();
@@ -171,14 +168,71 @@ class _AddCatchScreenState extends State<AddCatchScreen> {
   }
 
   // ============================================================
-  // SHOW SEARCHABLE SPECIES DIALOG - FIXED OVERFLOW
+  // FORM COMPLETENESS CHECK — drives the Save button enable/disable
+  // ============================================================
+
+  bool get _isFormComplete {
+    if (selectedItems.isEmpty) return false;
+
+    for (final item in selectedItems) {
+      // Species — required
+      if (item['species_id'] == null) return false;
+
+      // Weight — required, must be > 0
+      final w = item['weight_kg'];
+      if (w == null) return false;
+      if (w is num && w <= 0) return false;
+
+      // Quantity — required, must be > 0
+      final q = item['quantity_count'];
+      if (q == null) return false;
+      if (q is num && q <= 0) return false;
+    }
+    return true;
+  }
+
+  // ============================================================
+  // LABEL BUILDER — renders a red * on mandatory fields
+  // ============================================================
+
+  Widget _buildLabel({
+    required String text,
+    bool isRequired = false,
+    double fontSize = 12,
+  }) {
+    return RichText(
+      text: TextSpan(
+        children: [
+          TextSpan(
+            text: text,
+            style: TextStyle(
+              fontSize: fontSize,
+              fontWeight: FontWeight.w600,
+              color: const Color(0xFF07347F),
+            ),
+          ),
+          if (isRequired)
+            TextSpan(
+              text: ' *',
+              style: TextStyle(
+                fontSize: fontSize,
+                fontWeight: FontWeight.w700,
+                color: const Color(0xFFDC2626),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // ============================================================
+  // SHOW SEARCHABLE SPECIES DIALOG
   // ============================================================
 
   Future<void> _showSpeciesSearchDialog(int index) async {
     String searchQuery = '';
     List<Map<String, dynamic>> filteredSpecies = List.from(fishSpecies);
 
-    // Get already selected species IDs
     Set<int> selectedIds = {};
     for (int i = 0; i < selectedItems.length; i++) {
       if (i != index && selectedItems[i]['species_id'] != null) {
@@ -232,7 +286,6 @@ class _AddCatchScreenState extends State<AddCatchScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Search Field
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 4),
                       child: TextField(
@@ -241,7 +294,10 @@ class _AddCatchScreenState extends State<AddCatchScreen> {
                           setDialogState(() {
                             searchQuery = value.toLowerCase();
                             filteredSpecies = fishSpecies.where((species) {
-                              final name = species['fish_name']?.toString().toLowerCase() ?? '';
+                              final name = species['fish_name']
+                                  ?.toString()
+                                  .toLowerCase() ??
+                                  '';
                               return name.contains(searchQuery);
                             }).toList();
                           });
@@ -263,7 +319,8 @@ class _AddCatchScreenState extends State<AddCatchScreen> {
                           ),
                           focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(10),
-                            borderSide: const BorderSide(color: Color(0xFF1257C7)),
+                            borderSide:
+                            const BorderSide(color: Color(0xFF1257C7)),
                           ),
                           contentPadding: const EdgeInsets.symmetric(
                             horizontal: 12,
@@ -275,12 +332,11 @@ class _AddCatchScreenState extends State<AddCatchScreen> {
                       ),
                     ),
                     const SizedBox(height: 10),
-
-                    // Species List - Fixed with Flexible
                     Flexible(
                       child: filteredSpecies.isEmpty
                           ? Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 20),
+                        padding:
+                        const EdgeInsets.symmetric(vertical: 20),
                         child: Column(
                           children: [
                             Icon(
@@ -301,7 +357,8 @@ class _AddCatchScreenState extends State<AddCatchScreen> {
                       )
                           : ConstrainedBox(
                         constraints: BoxConstraints(
-                          maxHeight: MediaQuery.of(context).size.height * 0.4,
+                          maxHeight: MediaQuery.of(context).size.height *
+                              0.4,
                           minHeight: 100,
                         ),
                         child: ListView.builder(
@@ -309,10 +366,14 @@ class _AddCatchScreenState extends State<AddCatchScreen> {
                           itemCount: filteredSpecies.length,
                           itemBuilder: (context, idx) {
                             final species = filteredSpecies[idx];
-                            final speciesId = species['species_id'] as int;
-                            final fishName = species['fish_name']?.toString() ?? '';
-                            final isBanned = species['is_banned'] == true;
-                            final isAlreadySelected = selectedIds.contains(speciesId);
+                            final speciesId =
+                            species['species_id'] as int;
+                            final fishName =
+                                species['fish_name']?.toString() ?? '';
+                            final isBanned =
+                                species['is_banned'] == true;
+                            final isAlreadySelected =
+                            selectedIds.contains(speciesId);
 
                             return ListTile(
                               dense: true,
@@ -326,8 +387,12 @@ class _AddCatchScreenState extends State<AddCatchScreen> {
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                                 child: Icon(
-                                  isBanned ? Icons.block_rounded : Icons.set_meal_rounded,
-                                  color: isBanned ? Colors.red : const Color(0xFF1257C7),
+                                  isBanned
+                                      ? Icons.block_rounded
+                                      : Icons.set_meal_rounded,
+                                  color: isBanned
+                                      ? Colors.red
+                                      : const Color(0xFF1257C7),
                                   size: 18,
                                 ),
                               ),
@@ -338,7 +403,9 @@ class _AddCatchScreenState extends State<AddCatchScreen> {
                                 style: TextStyle(
                                   fontSize: 13,
                                   fontWeight: FontWeight.w600,
-                                  color: isBanned ? Colors.red : const Color(0xFF07347F),
+                                  color: isBanned
+                                      ? Colors.red
+                                      : const Color(0xFF07347F),
                                 ),
                               ),
                               subtitle: isBanned
@@ -353,13 +420,15 @@ class _AddCatchScreenState extends State<AddCatchScreen> {
                                   : null,
                               trailing: isAlreadySelected
                                   ? Container(
-                                padding: const EdgeInsets.symmetric(
+                                padding: const EdgeInsets
+                                    .symmetric(
                                   horizontal: 8,
                                   vertical: 2,
                                 ),
                                 decoration: BoxDecoration(
                                   color: Colors.grey[200],
-                                  borderRadius: BorderRadius.circular(10),
+                                  borderRadius:
+                                  BorderRadius.circular(10),
                                 ),
                                 child: const Text(
                                   'Added',
@@ -375,9 +444,10 @@ class _AddCatchScreenState extends State<AddCatchScreen> {
                               onTap: isAlreadySelected
                                   ? null
                                   : () {
-                                _updateItemField(index, 'species_id', speciesId);
                                 _updateItemField(
-                                    index, 'species_name', fishName);
+                                    index, 'species_id', speciesId);
+                                _updateItemField(index,
+                                    'species_name', fishName);
                                 Navigator.pop(context);
                               },
                             );
@@ -411,7 +481,7 @@ class _AddCatchScreenState extends State<AddCatchScreen> {
   // ============================================================
 
   Future<void> _submitCatch() async {
-    // Update all fields from controllers
+    // Sync the item maps from the controllers before validation.
     for (int i = 0; i < selectedItems.length; i++) {
       final weight = double.tryParse(weightControllers[i].text);
       final quantity = int.tryParse(quantityControllers[i].text);
@@ -422,29 +492,6 @@ class _AddCatchScreenState extends State<AddCatchScreen> {
       selectedItems[i]['remarks'] = remarks;
     }
 
-    // Validate all items
-    for (int i = 0; i < selectedItems.length; i++) {
-      final item = selectedItems[i];
-      if (item['species_id'] == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Please select species for item ${i + 1}'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-        return;
-      }
-      if (item['weight_kg'] == null || item['weight_kg'] <= 0) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Please enter valid weight for item ${i + 1}'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-        return;
-      }
-    }
-
     if (selectedItems.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -453,6 +500,64 @@ class _AddCatchScreenState extends State<AddCatchScreen> {
         ),
       );
       return;
+    }
+
+    // Validate every item
+    for (int i = 0; i < selectedItems.length; i++) {
+      final item = selectedItems[i];
+
+      // Fish species — required
+      if (item['species_id'] == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Please select fish species for Item ${i + 1}'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
+      // Weight — required, > 0
+      if (item['weight_kg'] == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Please enter weight for Item ${i + 1}'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+      if ((item['weight_kg'] as num) <= 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content:
+            Text('Weight must be greater than 0 for Item ${i + 1}'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
+      // Quantity — required, > 0
+      if (item['quantity_count'] == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Please enter quantity for Item ${i + 1}'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+      if ((item['quantity_count'] as num) <= 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content:
+            Text('Quantity must be greater than 0 for Item ${i + 1}'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
     }
 
     setState(() {
@@ -466,11 +571,10 @@ class _AddCatchScreenState extends State<AddCatchScreen> {
         final Map<String, dynamic> apiItem = {
           'species_id': item['species_id'],
           'weight_kg': item['weight_kg'],
+          'quantity_count': item['quantity_count'],
         };
-        if (item['quantity_count'] != null && item['quantity_count'] > 0) {
-          apiItem['quantity_count'] = item['quantity_count'];
-        }
-        if (item['remarks'] != null && item['remarks'].toString().isNotEmpty) {
+        if (item['remarks'] != null &&
+            item['remarks'].toString().isNotEmpty) {
           apiItem['remarks'] = item['remarks'];
         }
         items.add(apiItem);
@@ -497,7 +601,8 @@ class _AddCatchScreenState extends State<AddCatchScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(response['message'] ?? 'Failed to save catch details'),
+              content:
+              Text(response['message'] ?? 'Failed to save catch details'),
               backgroundColor: Colors.red,
             ),
           );
@@ -589,7 +694,10 @@ class _AddCatchScreenState extends State<AddCatchScreen> {
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
                       gradient: const LinearGradient(
-                        colors: [Color(0xFF06358D), Color(0xFF1257C7)],
+                        colors: [
+                          Color(0xFF06358D),
+                          Color(0xFF1257C7)
+                        ],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                       ),
@@ -646,7 +754,8 @@ class _AddCatchScreenState extends State<AddCatchScreen> {
                           color: Color(0xFF1257C7),
                         ),
                         foregroundColor: const Color(0xFF1257C7),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        padding:
+                        const EdgeInsets.symmetric(vertical: 12),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10),
                         ),
@@ -656,15 +765,44 @@ class _AddCatchScreenState extends State<AddCatchScreen> {
 
                   const SizedBox(height: 24),
 
+                  // Hint when Save is disabled
+                  if (!_isFormComplete)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Row(
+                        children: const [
+                          Icon(
+                            Icons.info_outline_rounded,
+                            size: 14,
+                            color: Color(0xFF64748B),
+                          ),
+                          SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              'Fill all mandatory fields (*) to enable Save.',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFF64748B),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
                   // Submit Button
                   SizedBox(
                     width: double.infinity,
                     height: 50,
                     child: ElevatedButton(
-                      onPressed: isLoading ? null : _submitCatch,
+                      onPressed:
+                      (isLoading || !_isFormComplete)
+                          ? null
+                          : _submitCatch,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF1257C7),
                         foregroundColor: Colors.white,
+                        disabledBackgroundColor: Colors.grey[400],
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10),
                         ),
@@ -715,7 +853,8 @@ class _AddCatchScreenState extends State<AddCatchScreen> {
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: isSelected ? const Color(0xFF1257C7) : const Color(0xFFE2E8F0),
+          color:
+          isSelected ? const Color(0xFF1257C7) : const Color(0xFFE2E8F0),
           width: isSelected ? 1.5 : 1,
         ),
         boxShadow: [
@@ -729,7 +868,7 @@ class _AddCatchScreenState extends State<AddCatchScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header with item number and delete button
+          // Header row
           Row(
             children: [
               Container(
@@ -748,7 +887,8 @@ class _AddCatchScreenState extends State<AddCatchScreen> {
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
-                    color: isSelected ? const Color(0xFF1257C7) : Colors.grey,
+                    color:
+                    isSelected ? const Color(0xFF1257C7) : Colors.grey,
                   ),
                 ),
               ),
@@ -769,35 +909,50 @@ class _AddCatchScreenState extends State<AddCatchScreen> {
 
           const SizedBox(height: 10),
 
-          // Species Selection Button
+          // Species picker — with red * when not yet selected
           InkWell(
             onTap: isLoading ? null : () => _showSpeciesSearchDialog(index),
             borderRadius: BorderRadius.circular(8),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              padding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
               decoration: BoxDecoration(
-                color: isSelected ? const Color(0xFFF0F6FF) : const Color(0xFFF8FAFC),
+                color: isSelected
+                    ? const Color(0xFFF0F6FF)
+                    : const Color(0xFFF8FAFC),
                 border: Border.all(
-                  color: isSelected ? const Color(0xFF1257C7) : const Color(0xFFE2E8F0),
+                  color: isSelected
+                      ? const Color(0xFF1257C7)
+                      : const Color(0xFFE2E8F0),
                 ),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Row(
                 children: [
                   Icon(
-                    isSelected ? Icons.check_circle_rounded : Icons.add_circle_outline_rounded,
-                    color: isSelected ? const Color(0xFF1257C7) : Colors.grey[400],
+                    isSelected
+                        ? Icons.check_circle_rounded
+                        : Icons.add_circle_outline_rounded,
+                    color: isSelected
+                        ? const Color(0xFF1257C7)
+                        : Colors.grey[400],
                     size: 20,
                   ),
                   const SizedBox(width: 10),
                   Expanded(
-                    child: Text(
-                      isSelected ? speciesName : 'Select fish species',
-                      style: TextStyle(
+                    child: isSelected
+                        ? Text(
+                      speciesName,
+                      style: const TextStyle(
                         fontSize: 14,
-                        color: isSelected ? const Color(0xFF07347F) : Colors.grey[500],
-                        fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                        color: Color(0xFF07347F),
+                        fontWeight: FontWeight.w600,
                       ),
+                    )
+                        : _buildLabel(
+                      text: 'Select fish species',
+                      isRequired: true,
+                      fontSize: 14,
                     ),
                   ),
                   const Icon(
@@ -812,25 +967,20 @@ class _AddCatchScreenState extends State<AddCatchScreen> {
 
           const SizedBox(height: 10),
 
-          // Weight and Quantity Row
+          // Weight + Quantity
           Row(
             children: [
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Weight (kg)',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF07347F),
-                      ),
-                    ),
+                    _buildLabel(text: 'Weight (kg)', isRequired: true),
                     const SizedBox(height: 4),
                     TextField(
                       controller: weightControllers[index],
-                      keyboardType: TextInputType.number,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
                       enabled: !isLoading && isSelected,
                       onChanged: (value) {
                         final double? weight = double.tryParse(value);
@@ -840,22 +990,26 @@ class _AddCatchScreenState extends State<AddCatchScreen> {
                         hintText: '0.0',
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(color: Colors.grey.shade300),
+                          borderSide:
+                          BorderSide(color: Colors.grey.shade300),
                         ),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(color: Colors.grey.shade300),
+                          borderSide:
+                          BorderSide(color: Colors.grey.shade300),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
-                          borderSide: const BorderSide(color: Color(0xFF1257C7)),
+                          borderSide:
+                          const BorderSide(color: Color(0xFF1257C7)),
                         ),
                         contentPadding: const EdgeInsets.symmetric(
                           horizontal: 10,
                           vertical: 8,
                         ),
                         filled: true,
-                        fillColor: isSelected ? Colors.white : Colors.grey[50]!,
+                        fillColor:
+                        isSelected ? Colors.white : Colors.grey[50]!,
                       ),
                     ),
                   ],
@@ -866,14 +1020,7 @@ class _AddCatchScreenState extends State<AddCatchScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Quantity',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF07347F),
-                      ),
-                    ),
+                    _buildLabel(text: 'Quantity', isRequired: true),
                     const SizedBox(height: 4),
                     TextField(
                       controller: quantityControllers[index],
@@ -887,22 +1034,26 @@ class _AddCatchScreenState extends State<AddCatchScreen> {
                         hintText: '0',
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(color: Colors.grey.shade300),
+                          borderSide:
+                          BorderSide(color: Colors.grey.shade300),
                         ),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(color: Colors.grey.shade300),
+                          borderSide:
+                          BorderSide(color: Colors.grey.shade300),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
-                          borderSide: const BorderSide(color: Color(0xFF1257C7)),
+                          borderSide:
+                          const BorderSide(color: Color(0xFF1257C7)),
                         ),
                         contentPadding: const EdgeInsets.symmetric(
                           horizontal: 10,
                           vertical: 8,
                         ),
                         filled: true,
-                        fillColor: isSelected ? Colors.white : Colors.grey[50]!,
+                        fillColor:
+                        isSelected ? Colors.white : Colors.grey[50]!,
                       ),
                     ),
                   ],
@@ -913,7 +1064,7 @@ class _AddCatchScreenState extends State<AddCatchScreen> {
 
           const SizedBox(height: 8),
 
-          // Remarks
+          // Remarks (optional)
           TextField(
             controller: remarksControllers[index],
             enabled: !isLoading && isSelected,

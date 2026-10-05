@@ -1,6 +1,7 @@
 // lib/screens/boat_owner/boat_owner_details_screen.dart
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../database/database_helper.dart';
 import '../../services/api_services/boat_owners_api_service.dart';
@@ -30,12 +31,32 @@ class _BoatOwnerDetailsScreenState extends State<BoatOwnerDetailsScreen> {
   List<Map<String, dynamic>> ports = [];
   List<Map<String, dynamic>> filteredPorts = [];
 
+  // ── Validation state — tracks whether the user has typed in each field ──
+  bool nameTouched = false;
+  bool addressTouched = false;
+  bool aadhaarTouched = false;
+
   final BoatOwnwesApiService _apiService = BoatOwnwesApiService();
   final DatabaseHelper _db = DatabaseHelper();
 
   @override
   void initState() {
     super.initState();
+    ownerNameController.addListener(() {
+      if (!nameTouched && ownerNameController.text.isNotEmpty) {
+        setState(() => nameTouched = true);
+      }
+    });
+    addressController.addListener(() {
+      if (!addressTouched && addressController.text.isNotEmpty) {
+        setState(() => addressTouched = true);
+      }
+    });
+    aadhaarController.addListener(() {
+      if (!aadhaarTouched && aadhaarController.text.isNotEmpty) {
+        setState(() => aadhaarTouched = true);
+      }
+    });
     _loadData();
   }
 
@@ -427,6 +448,45 @@ class _BoatOwnerDetailsScreenState extends State<BoatOwnerDetailsScreen> {
   }
 
   // ===========================================================================
+  // VALIDATORS  (each returns null if valid, else an error message)
+  // ===========================================================================
+
+  String? _validateName(String v) {
+    final t = v.trim();
+    if (t.isEmpty) return 'Please enter owner name';
+    if (t.length < 3) return 'At least 3 characters';
+    if (!RegExp(r'^[a-zA-Z\s]+$').hasMatch(t)) {
+      return 'Only letters and spaces allowed';
+    }
+    return null;
+  }
+
+  String? _validateAddress(String v) {
+    final t = v.trim();
+    if (t.isEmpty) return 'Please enter address';
+    if (t.length < 5) return 'At least 5 characters';
+    return null;
+  }
+
+  String? _validateAadhaar(String v) {
+    final t = v.trim();
+    if (t.isEmpty) return 'Please enter Aadhaar number';
+    if (!RegExp(r'^[0-9]{12}$').hasMatch(t)) {
+      return 'Must be exactly 12 digits';
+    }
+    return null;
+  }
+
+  String? _validateMobile(String v) {
+    final t = v.trim();
+    if (t.isEmpty) return 'Please enter mobile number';
+    if (!RegExp(r'^[6-9][0-9]{9}$').hasMatch(t)) {
+      return 'Must be 10 digits, starting 6-9';
+    }
+    return null;
+  }
+
+  // ===========================================================================
   // FORM FIELDS
   // ===========================================================================
 
@@ -446,21 +506,41 @@ class _BoatOwnerDetailsScreenState extends State<BoatOwnerDetailsScreen> {
       ),
       child: Column(
         children: [
+          // ── Owner Name ────────────────────────────────
           _buildTextField(
             label: 'Owner Name',
             hint: 'Enter owner name',
             controller: ownerNameController,
             isRequired: true,
+            keyboardType: TextInputType.name,
+            maxLength: 60,
+            inputFormatters: [
+              FilteringTextInputFormatter.deny(RegExp(r'[0-9]')),
+              LettersOnlyFormatter(),
+            ],
+            validator: _validateName,
+            showValidation: nameTouched,
           ),
+
           const SizedBox(height: 16),
+
+          // ── Address ───────────────────────────────────
           _buildTextField(
             label: 'Address',
             hint: 'Enter address',
             controller: addressController,
             isRequired: true,
-            maxLines: 2,
+            maxLines: 3,
+            maxLength: 250,
+            keyboardType: TextInputType.streetAddress,
+            inputFormatters: [AddressFormatter()],
+            validator: _validateAddress,
+            showValidation: addressTouched,
           ),
+
           const SizedBox(height: 16),
+
+          // ── Aadhaar ───────────────────────────────────
           _buildTextField(
             label: 'Aadhaar No',
             hint: 'Enter Aadhaar number',
@@ -468,8 +548,17 @@ class _BoatOwnerDetailsScreenState extends State<BoatOwnerDetailsScreen> {
             isRequired: true,
             keyboardType: TextInputType.number,
             maxLength: 12,
+            inputFormatters: [
+              FilteringTextInputFormatter.digitsOnly,
+              LengthLimitingTextInputFormatter(12),
+            ],
+            validator: _validateAadhaar,
+            showValidation: aadhaarTouched,
           ),
+
           const SizedBox(height: 16),
+
+          // ── Mobile (auto-filled, disabled) ────────────
           _buildTextField(
             label: 'Mobile No',
             hint: 'Enter mobile number',
@@ -478,8 +567,12 @@ class _BoatOwnerDetailsScreenState extends State<BoatOwnerDetailsScreen> {
             keyboardType: TextInputType.phone,
             maxLength: 10,
             enabled: false,
+            validator: _validateMobile,
+            showValidation: mobileController.text.isNotEmpty,
           ),
+
           const SizedBox(height: 16),
+
           _buildSearchableDropdownField(),
         ],
       ),
@@ -499,7 +592,15 @@ class _BoatOwnerDetailsScreenState extends State<BoatOwnerDetailsScreen> {
     int maxLines = 1,
     int? maxLength,
     bool enabled = true,
+    List<TextInputFormatter>? inputFormatters,
+    String? Function(String)? validator,     // ✅ NEW
+    bool showValidation = false,             // ✅ NEW
   }) {
+    final error = showValidation && validator != null
+        ? validator(controller.text)
+        : null;
+    final isValid = showValidation && validator != null && error == null;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -524,6 +625,25 @@ class _BoatOwnerDetailsScreenState extends State<BoatOwnerDetailsScreen> {
                 ),
               ),
             ],
+            const Spacer(),
+            // ✅ Live validation indicator
+            if (showValidation && validator != null)
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 180),
+                child: isValid
+                    ? const Icon(
+                        Icons.check_circle,
+                        key: ValueKey('ok'),
+                        color: Color(0xFF16A34A),
+                        size: 18,
+                      )
+                    : const Icon(
+                        Icons.cancel,
+                        key: ValueKey('no'),
+                        color: Color(0xFFDC2626),
+                        size: 18,
+                      ),
+              ),
           ],
         ),
         const SizedBox(height: 6),
@@ -533,6 +653,8 @@ class _BoatOwnerDetailsScreenState extends State<BoatOwnerDetailsScreen> {
           maxLines: maxLines,
           maxLength: maxLength,
           enabled: enabled,
+          inputFormatters: inputFormatters,
+          onChanged: (_) => setState(() {}),
           style: const TextStyle(fontSize: 14),
           decoration: InputDecoration(
             hintText: hint,
@@ -540,22 +662,27 @@ class _BoatOwnerDetailsScreenState extends State<BoatOwnerDetailsScreen> {
               fontSize: 14,
               color: Colors.grey[400],
             ),
+            // ✅ Red border when the field has an error
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
               borderSide: BorderSide(
-                color: Colors.grey[300]!,
+                color: error != null ? Colors.red : Colors.grey[300]!,
+                width: error != null ? 1.5 : 1,
               ),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
               borderSide: BorderSide(
-                color: Colors.grey[300]!,
+                color: error != null ? Colors.red : Colors.grey[300]!,
+                width: error != null ? 1.5 : 1,
               ),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(
-                color: Color(0xFF1257C7),
+              borderSide: BorderSide(
+                color: error != null
+                    ? Colors.red
+                    : const Color(0xFF1257C7),
                 width: 2,
               ),
             ),
@@ -568,6 +695,21 @@ class _BoatOwnerDetailsScreenState extends State<BoatOwnerDetailsScreen> {
             filled: !enabled,
           ),
         ),
+        // ✅ Error text under the field
+        if (error != null) ...[
+          const SizedBox(height: 4),
+          Padding(
+            padding: const EdgeInsets.only(left: 2),
+            child: Text(
+              error,
+              style: const TextStyle(
+                color: Color(0xFFDC2626),
+                fontSize: 11.5,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -600,6 +742,24 @@ class _BoatOwnerDetailsScreenState extends State<BoatOwnerDetailsScreen> {
               ),
             ),
             const Spacer(),
+            // ✅ Validation indicator
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 180),
+              child: selectedHomePortId != null
+                  ? const Icon(
+                      Icons.check_circle,
+                      key: ValueKey('ok'),
+                      color: Color(0xFF16A34A),
+                      size: 18,
+                    )
+                  : const Icon(
+                      Icons.cancel,
+                      key: ValueKey('no'),
+                      color: Color(0xFFDC2626),
+                      size: 18,
+                    ),
+            ),
+            const SizedBox(width: 8),
             GestureDetector(
               onTap: isLoadingPorts ? null : _refreshPorts,
               child: Container(
@@ -1047,29 +1207,36 @@ class _BoatOwnerDetailsScreenState extends State<BoatOwnerDetailsScreen> {
   // ===========================================================================
 
   void _saveDetails() async {
-    // Validate fields
-    if (ownerNameController.text.trim().isEmpty) {
-      _showError('Please enter owner name');
+    final name = ownerNameController.text.trim();
+    final address = addressController.text.trim();
+    final aadhaar = aadhaarController.text.trim();
+    final mobile = mobileController.text.trim();
+
+    // Force-show all validation indicators
+    setState(() {
+      nameTouched = true;
+      addressTouched = true;
+      aadhaarTouched = true;
+    });
+
+    final nameErr = _validateName(name);
+    if (nameErr != null) {
+      _showError(nameErr);
       return;
     }
-    if (addressController.text.trim().isEmpty) {
-      _showError('Please enter address');
+    final addrErr = _validateAddress(address);
+    if (addrErr != null) {
+      _showError(addrErr);
       return;
     }
-    if (aadhaarController.text.trim().isEmpty) {
-      _showError('Please enter Aadhaar number');
+    final aadhaarErr = _validateAadhaar(aadhaar);
+    if (aadhaarErr != null) {
+      _showError(aadhaarErr);
       return;
     }
-    if (aadhaarController.text.trim().length != 12) {
-      _showError('Please enter a valid 12-digit Aadhaar number');
-      return;
-    }
-    if (mobileController.text.trim().isEmpty) {
-      _showError('Please enter mobile number');
-      return;
-    }
-    if (mobileController.text.trim().length != 10) {
-      _showError('Please enter a valid 10-digit mobile number');
+    final mobileErr = _validateMobile(mobile);
+    if (mobileErr != null) {
+      _showError(mobileErr);
       return;
     }
     if (selectedHomePortId == null) {
@@ -1082,12 +1249,12 @@ class _BoatOwnerDetailsScreenState extends State<BoatOwnerDetailsScreen> {
     try {
       // Build request with ONLY the required fields
       final response = await _apiService.createProfile(
-        ownerName: ownerNameController.text.trim(),
-        aadhaarNo: aadhaarController.text.trim(),
+        ownerName: name,
+        aadhaarNo: aadhaar,
         primaryPortId: selectedHomePortId!,
         otp: '000000',
-        mobileNo: mobileController.text.trim(),
-        address: addressController.text.trim(),
+        mobileNo: mobile,
+        address: address,
       );
 
       print('📥 Create Profile Response: $response');
@@ -1097,10 +1264,10 @@ class _BoatOwnerDetailsScreenState extends State<BoatOwnerDetailsScreen> {
 
         // Save boat owner to local database
         await _db.insertBoatOwner({
-          'owner_name': ownerNameController.text.trim(),
-          'address': addressController.text.trim(),
-          'aadhaar': aadhaarController.text.trim(),
-          'mobile': mobileController.text.trim(),
+          'owner_name': name,
+          'address': address,
+          'aadhaar': aadhaar,
+          'mobile': mobile,
           'home_port_id': selectedHomePortId,
           'home_port_name': selectedHomePortName,
           'photo_path': null,
@@ -1158,5 +1325,65 @@ class _BoatOwnerDetailsScreenState extends State<BoatOwnerDetailsScreen> {
         backgroundColor: Colors.green,
       ),
     );
+  }
+}
+
+// ============================================================================
+// INPUT FORMATTERS
+// ============================================================================
+
+/// Allows only letters and spaces. Rejects digits, punctuation, symbols.
+class LettersOnlyFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    // Allow empty
+    if (newValue.text.isEmpty) return newValue;
+
+    // Regex: letters (a-z, A-Z) and spaces only
+    final regex = RegExp(r'^[a-zA-Z\s]+$');
+    if (regex.hasMatch(newValue.text)) {
+      return newValue;
+    }
+    // Reject — return old value
+    return oldValue;
+  }
+}
+
+/// Allows only digits.
+class DigitsOnlyFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    if (newValue.text.isEmpty) return newValue;
+
+    final regex = RegExp(r'^[0-9]+$');
+    if (regex.hasMatch(newValue.text)) {
+      return newValue;
+    }
+    return oldValue;
+  }
+}
+
+/// Allows letters, digits, spaces, commas, dots, hyphens, slashes, and
+/// common address punctuation. Rejects stray symbols like @ # $ % ^ & *.
+class AddressFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    if (newValue.text.isEmpty) return newValue;
+
+    // Letters, digits, spaces, and safe punctuation
+    final regex = RegExp(r'^[a-zA-Z0-9\s,.\-/#()]+$');
+    if (regex.hasMatch(newValue.text)) {
+      return newValue;
+    }
+    return oldValue;
   }
 }

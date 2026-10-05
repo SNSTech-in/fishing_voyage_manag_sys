@@ -1,3 +1,6 @@
+// lib/officer/screens/sos_report_screen.dart
+
+import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../../../services/api_services/officer_api_service.dart';
@@ -11,10 +14,15 @@ class SosReportScreen extends StatefulWidget {
 
 class _SosReportScreenState extends State<SosReportScreen> {
   final OfficersApiService _api = OfficersApiService();
+  final TextEditingController _searchCtrl = TextEditingController();
+
+  // ✅ Debounce so search fires as user types (not on every keystroke)
+  Timer? _searchDebounce;
 
   static const Color _primary = Color(0xFF1257C7);
   static const Color _bg = Color(0xFFF5F7FA);
   static const Color _textDark = Color(0xFF0F172A);
+  static const Color _textMid = Color(0xFF475569);
   static const Color _textLight = Color(0xFF94A3B8);
   static const Color _divider = Color(0xFFE2E8F0);
   static const Color _danger = Color(0xFFDC2626);
@@ -22,6 +30,7 @@ class _SosReportScreenState extends State<SosReportScreen> {
   static const Color _success = Color(0xFF059669);
 
   List<Map<String, dynamic>> _items = [];
+  List<Map<String, dynamic>> _filteredItems = [];
   bool _loading = true;
   String? _error;
 
@@ -35,12 +44,81 @@ class _SosReportScreenState extends State<SosReportScreen> {
     _load();
   }
 
+  @override
+  void dispose() {
+    _searchDebounce?.cancel();
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
   String _fmt(DateTime d) {
     final m = d.month.toString().padLeft(2, '0');
     final day = d.day.toString().padLeft(2, '0');
     return '${d.year}-$m-$day';
   }
 
+  // ============================================================
+  // LIVE SEARCH — debounced
+  // ============================================================
+  void _onSearchChanged(String value) {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 300), () {
+      _applyLocalSearch();
+    });
+  }
+
+  void _clearSearch() {
+    _searchDebounce?.cancel();
+    _searchCtrl.clear();
+    _applyLocalSearch();
+  }
+
+  /// Filters the fetched list on the client using every relevant SOS field.
+  /// Always runs after _load() and after every debounced keystroke.
+  void _applyLocalSearch() {
+    final q = _searchCtrl.text.trim().toLowerCase();
+
+    if (q.isEmpty) {
+      setState(() {
+        _filteredItems = List.from(_items);
+      });
+      return;
+    }
+
+    final filtered = _items.where((item) {
+      final haystack = [
+        item['sos_ref_no'],
+        item['reference_no'],
+        item['boat_name'],
+        item['boat_reg_no'],
+        item['boat_number'],
+        item['crew_name'],
+        item['raised_by_name'],
+        item['reported_by_name'],
+        item['owner_name'],
+        item['description'],
+        item['remarks'],
+        item['sos_type'],
+        item['severity'],
+        item['sos_status'],
+        item['status'],
+        item['latitude'],
+        item['longitude'],
+      ]
+          .where((e) => e != null)
+          .map((e) => e.toString().toLowerCase())
+          .join(' ');
+      return haystack.contains(q);
+    }).toList();
+
+    setState(() {
+      _filteredItems = filtered;
+    });
+  }
+
+  // ============================================================
+  // LOAD
+  // ============================================================
   Future<void> _load() async {
     setState(() {
       _loading = true;
@@ -55,14 +133,18 @@ class _SosReportScreenState extends State<SosReportScreen> {
     if (!mounted) return;
 
     if (res['success'] == true) {
+      final fetched = OfficersApiService.extractList(res);
       setState(() {
-        _items = OfficersApiService.extractList(res);
+        _items = fetched;
         _loading = false;
       });
+      // Apply the current search term to the freshly fetched list.
+      _applyLocalSearch();
     } else {
       setState(() {
         _error = res['message']?.toString() ?? 'Failed to load report';
         _loading = false;
+        _filteredItems = [];
       });
     }
   }
@@ -135,6 +217,7 @@ class _SosReportScreenState extends State<SosReportScreen> {
         color: _primary,
         child: Column(
           children: [
+            _searchField(),
             _dateRow(),
             _summaryRow(),
             const Divider(height: 1, color: _divider),
@@ -145,9 +228,55 @@ class _SosReportScreenState extends State<SosReportScreen> {
     );
   }
 
+  // ============================================================
+  // SEARCH FIELD
+  // ============================================================
+  Widget _searchField() {
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      child: TextField(
+        controller: _searchCtrl,
+        textInputAction: TextInputAction.search,
+        onChanged: _onSearchChanged,            // ✅ live search
+        onSubmitted: (_) {
+          _searchDebounce?.cancel();
+          _applyLocalSearch();
+        },
+        decoration: InputDecoration(
+          hintText: 'Search by boat, crew, ref no, description...',
+          prefixIcon: const Icon(Icons.search, size: 20),
+          suffixIcon: _searchCtrl.text.isNotEmpty
+              ? IconButton(
+            icon: const Icon(Icons.close_rounded, size: 18),
+            onPressed: _clearSearch,
+          )
+              : null,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: BorderSide(color: Colors.grey.shade300),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: BorderSide(color: Colors.grey.shade300),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: _primary, width: 1.5),
+          ),
+          isDense: true,
+          filled: true,
+          fillColor: Colors.white,
+          contentPadding:
+          const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        ),
+      ),
+    );
+  }
+
   Widget _dateRow() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
       child: Row(
         children: [
           Expanded(
@@ -319,18 +448,38 @@ class _SosReportScreenState extends State<SosReportScreen> {
         ],
       );
     }
-    if (_items.isEmpty) {
-      return const Center(
-        child: Text('No SOS events in this range.',
-            style: TextStyle(color: Colors.black54)),
+    if (_filteredItems.isEmpty) {
+      final hasSearch = _searchCtrl.text.trim().isNotEmpty;
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                hasSearch ? Icons.search_off_rounded : Icons.inbox_rounded,
+                size: 48,
+                color: Colors.black26,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                hasSearch
+                    ? 'No SOS records match your search.'
+                    : 'No SOS events in this range.',
+                style: const TextStyle(color: Colors.black54),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
       );
     }
 
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
-      itemCount: _items.length,
+      itemCount: _filteredItems.length,
       separatorBuilder: (_, __) => const SizedBox(height: 8),
-      itemBuilder: (_, i) => _sosTile(_items[i]),
+      itemBuilder: (_, i) => _sosTile(_filteredItems[i]),
     );
   }
 

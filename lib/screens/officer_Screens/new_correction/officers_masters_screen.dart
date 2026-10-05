@@ -22,7 +22,12 @@ class _OfficersMastersScreenState extends State<OfficersMastersScreen> {
   static const Color _success = Color(0xFF059669);
   static const Color _danger = Color(0xFFDC2626);
 
+  /// The FULL master list (never mutated by search).
+  List<Map<String, dynamic>> _allItems = [];
+
+  /// The currently displayed list (after applying search).
   List<Map<String, dynamic>> _items = [];
+
   bool _loading = true;
   String? _error;
 
@@ -38,27 +43,74 @@ class _OfficersMastersScreenState extends State<OfficersMastersScreen> {
     super.dispose();
   }
 
+  // ── Networking ─────────────────────────────────────────
+
   Future<void> _load() async {
     setState(() {
       _loading = true;
       _error = null;
     });
 
-    final res = await _api.fetchOfficers(search: _searchCtrl.text.trim());
+    // Send the search term to the API (server may do its own filtering),
+    // but ALSO keep a full local copy for client-side fallback.
+    final res = await _api.fetchOfficers(
+      search: _searchCtrl.text.trim(),
+    );
 
     if (!mounted) return;
 
     if (res['success'] == true) {
       setState(() {
-        _items = OfficersApiService.extractList(res);
+        _allItems = OfficersApiService.extractList(res);
         _loading = false;
       });
+      _applySearch(); // derive _items from the fetched master
     } else {
       setState(() {
         _error = res['message']?.toString() ?? 'Failed to load officers';
         _loading = false;
       });
     }
+  }
+
+  // ── Local search (instant, no network) ─────────────────
+
+  /// Filters `_allItems` by the current search text, matching across
+  /// multiple fields (name / id / mobile / email / designation /
+  /// department / district) case-insensitively.
+  void _applySearch() {
+    final q = _searchCtrl.text.trim().toLowerCase();
+
+    if (q.isEmpty) {
+      setState(() => _items = List<Map<String, dynamic>>.from(_allItems));
+      return;
+    }
+
+    final filtered = _allItems.where((o) {
+      final name = (o['officer_name'] ?? o['name'] ?? o['full_name'] ?? '')
+          .toString()
+          .toLowerCase();
+      final id = (o['officer_id'] ?? o['user_id'] ?? '')
+          .toString()
+          .toLowerCase();
+      final mobile = (o['mobile_no'] ?? o['phone'] ?? o['mobile'] ?? '')
+          .toString()
+          .toLowerCase();
+      final email = (o['email'] ?? '').toString().toLowerCase();
+      final designation = (o['designation'] ?? '').toString().toLowerCase();
+      final department = (o['department'] ?? '').toString().toLowerCase();
+      final district = (o['district'] ?? '').toString().toLowerCase();
+
+      return name.contains(q) ||
+          id.contains(q) ||
+          mobile.contains(q) ||
+          email.contains(q) ||
+          designation.contains(q) ||
+          department.contains(q) ||
+          district.contains(q);
+    }).toList();
+
+    setState(() => _items = filtered);
   }
 
   @override
@@ -107,8 +159,9 @@ class _OfficersMastersScreenState extends State<OfficersMastersScreen> {
   }
 
   Widget _summaryRow() {
-    final active = _items.where((e) => e['is_active'] == true).length;
-    final departments = _items
+    // Summary is based on the FULL master, not the filtered view.
+    final active = _allItems.where((e) => e['is_active'] == true).length;
+    final departments = _allItems
         .map((e) => e['department']?.toString() ?? '')
         .where((e) => e.isNotEmpty)
         .toSet()
@@ -119,7 +172,7 @@ class _OfficersMastersScreenState extends State<OfficersMastersScreen> {
       child: Row(
         children: [
           Expanded(
-            child: _summaryCard('Total', _items.length,
+            child: _summaryCard('Total', _allItems.length,
                 Icons.groups_rounded, Colors.indigo),
           ),
           const SizedBox(width: 10),
@@ -137,8 +190,7 @@ class _OfficersMastersScreenState extends State<OfficersMastersScreen> {
     );
   }
 
-  Widget _summaryCard(
-      String label, int value, IconData icon, Color color) {
+  Widget _summaryCard(String label, int value, IconData icon, Color color) {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -181,6 +233,9 @@ class _OfficersMastersScreenState extends State<OfficersMastersScreen> {
       child: TextField(
         controller: _searchCtrl,
         textInputAction: TextInputAction.search,
+        // Instant local filtering on every keystroke:
+        onChanged: (_) => _applySearch(),
+        // Keyboard "search" key also triggers a server refresh:
         onSubmitted: (_) => _load(),
         decoration: InputDecoration(
           hintText: 'Search officers...',
@@ -191,7 +246,7 @@ class _OfficersMastersScreenState extends State<OfficersMastersScreen> {
             icon: const Icon(Icons.close_rounded, size: 18),
             onPressed: () {
               _searchCtrl.clear();
-              _load();
+              _applySearch(); // instant reset of the list
             },
           ),
           border: OutlineInputBorder(
@@ -242,10 +297,11 @@ class _OfficersMastersScreenState extends State<OfficersMastersScreen> {
   }
 
   Widget _officerTile(Map<String, dynamic> o) {
-    final name = o['officer_name']?.toString() ?? '—';
+    final name =
+    (o['officer_name'] ?? o['name'] ?? o['full_name'] ?? '—').toString();
     final designation = o['designation']?.toString() ?? '';
     final department = o['department']?.toString() ?? '';
-    final mobile = o['mobile_no']?.toString() ?? '';
+    final mobile = (o['mobile_no'] ?? o['phone'] ?? o['mobile'] ?? '').toString();
     final email = o['email']?.toString() ?? '';
     final district = o['district']?.toString() ?? '';
     final state = o['state']?.toString() ?? '';

@@ -192,6 +192,8 @@ class DepartLoginSelection extends StatelessWidget {
                 ),
                 const SizedBox(height: 10),
                 _buildGetStartedButton(context),
+                const SizedBox(height: 8),
+                _buildNewUserHint(),
               ],
             ),
           ),
@@ -256,6 +258,30 @@ class DepartLoginSelection extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildNewUserHint() {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: const [
+        Text(
+          'New user? ',
+          style: TextStyle(
+            fontSize: 10.5,
+            color: Color(0xFF4C5968),
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        Text(
+          'Tap on Get Started',
+          style: TextStyle(
+            fontSize: 10.5,
+            color: primaryBlue,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
     );
   }
 

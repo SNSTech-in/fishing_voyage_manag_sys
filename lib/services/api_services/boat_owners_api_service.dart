@@ -798,6 +798,101 @@ class BoatOwnwesApiService {
     }
   }
 
+  /// Fetch the full ping history for a voyage from the server.
+  ///
+  /// Used by the route map to reconstruct the travelled route after a
+  /// reinstall (local SQLite is wiped on uninstall).
+  ///
+  /// Tries multiple plausible endpoint shapes so this works regardless
+  /// of whether the backend exposes /voyages/{id}/locations or /pings?voyage_no=...
+  Future<Map<String, dynamic>> getVoyageLocations({
+    required int intimationId,
+    String? voyageNo,
+  }) async {
+    final headers = await _getHeadersWithAccessToken();
+
+    final candidateUris = <Uri>[
+      Uri.parse('${ApiConstants.baseUrl}/boat-owner/voyages/$intimationId/locations'),
+      Uri.parse('${ApiConstants.intimations}/$intimationId/locations'),
+      if (voyageNo != null && voyageNo.isNotEmpty)
+        Uri.parse('${ApiConstants.pings}?voyage_no=$voyageNo'),
+    ];
+
+    Object? lastError;
+
+    for (final uri in candidateUris) {
+      _logRequest('getVoyageLocations', 'GET', uri, headers);
+      try {
+        final response = await _client
+            .get(uri, headers: headers)
+            .timeout(const Duration(seconds: 25));
+
+        _logResponse('getVoyageLocations', response);
+
+        if (response.statusCode == 404) {
+          // Try the next candidate.
+          continue;
+        }
+
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          lastError = 'HTTP ${response.statusCode}';
+          continue;
+        }
+
+        Map<String, dynamic> json = {};
+        try {
+          json = jsonDecode(response.body) as Map<String, dynamic>;
+        } catch (_) {
+          lastError = 'Invalid JSON from $uri';
+          continue;
+        }
+
+        // Normalize common shapes to a `locations` list.
+        List<dynamic> raw = const [];
+        final data = json['data'];
+        if (data is Map && data['locations'] is List) {
+          raw = data['locations'] as List;
+        } else if (data is List) {
+          raw = data;
+        } else if (json['locations'] is List) {
+          raw = json['locations'] as List;
+        } else if (json['items'] is List) {
+          raw = json['items'] as List;
+        }
+
+        final normalized = <Map<String, dynamic>>[];
+        for (final item in raw) {
+          if (item is! Map) continue;
+          final lat = (item['latitude'] as num?)?.toDouble();
+          final lng = (item['longitude'] as num?)?.toDouble();
+          if (lat == null || lng == null) continue;
+          final ts = (item['ping_date_time'] ??
+                  item['timestamp'] ??
+                  item['created_at'] ??
+                  '')
+              .toString();
+          normalized.add({
+            'latitude': lat,
+            'longitude': lng,
+            'timestamp': ts,
+            'voyage_no': item['voyage_no']?.toString() ?? voyageNo ?? '',
+          });
+        }
+
+        return {'success': true, 'locations': normalized};
+      } catch (e, st) {
+        lastError = e;
+        _logError('getVoyageLocations', e, st);
+      }
+    }
+
+    return {
+      'success': false,
+      'locations': const <Map<String, dynamic>>[],
+      'message': 'All candidate endpoints failed: $lastError',
+    };
+  }
+
   // ============================================================
   // SOS & CITING
   // ============================================================
