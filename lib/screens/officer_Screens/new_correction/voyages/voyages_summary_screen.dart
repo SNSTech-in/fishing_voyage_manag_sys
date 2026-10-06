@@ -62,11 +62,11 @@ class _VoyagesSummaryScreenState extends State<VoyagesSummaryScreen> {
   static const List<String> _preferredOrder = [
     'ONGOING',
     'AT SEA',
+    'OVERDUE',
     'NOT_DEPARTED',
     'NOT STARTED',
     'UPCOMING',
     'COMPLETED',
-    'OVERDUE',
     'CANCELLED',
   ];
 
@@ -109,23 +109,28 @@ class _VoyagesSummaryScreenState extends State<VoyagesSummaryScreen> {
   }
 
   // ═══════════════════════════════════════════════════════════
-  // STATUS
+  // STATUS  (prefer derived_status so OVERDUE and ONGOING
+  //          become two distinct buckets)
   // ═══════════════════════════════════════════════════════════
   String _statusOf(Map<String, dynamic> v) {
-    final tripStatus = v['trip_status']?.toString().trim();
-    if (tripStatus != null && tripStatus.isNotEmpty) {
-      return tripStatus.toUpperCase();
+    // 1️⃣ Business state wins when the backend provides it.
+    final derived = v['derived_status']?.toString().trim();
+    if (derived != null && derived.isNotEmpty) {
+      return derived.toUpperCase();
     }
 
-    final derivedStatus = v['derived_status']?.toString().trim();
-    if (derivedStatus != null && derivedStatus.isNotEmpty) {
-      return derivedStatus.toUpperCase();
+    // 2️⃣ Fall back to the raw trip lifecycle.
+    final trip = v['trip_status']?.toString().trim();
+    if (trip != null && trip.isNotEmpty) {
+      return trip.toUpperCase();
     }
 
-    final status = v['status']?.toString().trim();
-    if (status != null && status.isNotEmpty) {
-      return status.toUpperCase();
+    // 3️⃣ Last resort — generic status field.
+    final generic = v['status']?.toString().trim();
+    if (generic != null && generic.isNotEmpty) {
+      return generic.toUpperCase();
     }
+
     return 'UNKNOWN';
   }
 
@@ -616,6 +621,7 @@ class _VoyagesSummaryScreenState extends State<VoyagesSummaryScreen> {
                 color: _statusColor(status),
                 selected: _statusFilter == status,
                 loading: _loadingCounts,
+                urgent: status == 'OVERDUE',
                 onTap: () {
                   if (_statusFilter == status) return;
                   _selectStatus(status);
@@ -639,29 +645,36 @@ class _VoyagesSummaryScreenState extends State<VoyagesSummaryScreen> {
     required bool selected,
     required VoidCallback onTap,
     required bool loading,
+    bool urgent = false,
   }) {
+    final borderColor = selected
+        ? color
+        : (urgent ? color.withOpacity(0.45) : _divider);
+
     return Material(
       color: selected ? color.withOpacity(0.12) : Colors.white,
       borderRadius: BorderRadius.circular(14),
       child: InkWell(
         borderRadius: BorderRadius.circular(14),
         onTap: onTap,
-        child: Container(
-          width: 92,
-          padding:
-          const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: selected ? color : _divider,
-              width: selected ? 1.6 : 1,
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
+        child: Stack(
+          children: [
+            // ── Layer 1: main content, all centered ──
+            Container(
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 6, vertical: 10),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: borderColor,
+                  width: selected ? 1.6 : (urgent ? 1.2 : 1),
+                ),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
+                  // Icon box — centered
                   Container(
                     height: 26,
                     width: 26,
@@ -671,53 +684,70 @@ class _VoyagesSummaryScreenState extends State<VoyagesSummaryScreen> {
                     ),
                     child: Icon(icon, size: 14, color: color),
                   ),
-                  const Spacer(),
-                  if (selected)
-                    Icon(Icons.check_circle_rounded,
-                        size: 14, color: color),
-                ],
-              ),
-              const SizedBox(height: 6),
-              SizedBox(
-                height: 20,
-                child: loading
-                    ? Align(
-                  alignment: Alignment.centerLeft,
-                  child: SizedBox(
-                    width: 14,
-                    height: 14,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: color,
+
+                  const SizedBox(height: 6),
+
+                  // Count — centered (or spinner while loading)
+                  SizedBox(
+                    height: 20,
+                    child: loading
+                        ? Center(
+                      child: SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: color,
+                        ),
+                      ),
+                    )
+                        : Center(
+                      child: Text(
+                        '$count',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                          color: color,
+                          height: 1.05,
+                        ),
+                      ),
                     ),
                   ),
-                )
-                    : Text(
-                  '$count',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                    color: color,
-                    height: 1.05,
+
+                  const SizedBox(height: 2),
+
+                  // Label — centered, wraps to 2 lines
+                  Flexible(
+                    child: Text(
+                      label,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                        color: _textDark,
+                        height: 1.1,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
+                ],
+              ),
+            ),
+
+            // ── Layer 2: checkmark floating top-right ──
+            if (selected)
+              Positioned(
+                top: 6,
+                right: 6,
+                child: Icon(
+                  Icons.check_circle_rounded,
+                  size: 14,
+                  color: color,
                 ),
               ),
-              const SizedBox(height: 2),
-              Flexible(
-                child: Text(
-                  label,
-                  style: const TextStyle(
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w700,
-                    color: _textDark,
-                    height: 1.1,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
+          ],
         ),
       ),
     );
