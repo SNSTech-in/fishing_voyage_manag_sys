@@ -128,18 +128,25 @@ class _SpeciesMastersScreenState extends State<SpeciesMastersScreen> {
 
     var filtered = List<Map<String, dynamic>>.from(_allItems);
 
-    // Active / Inactive
-    if (_activeFilter != null) {
-      filtered = filtered
-          .where((e) => _activeOf(e) == _activeFilter)
-          .toList();
-    }
-
-    // Banned / Not banned
+    // Banned / Not banned (applied first so Active can exclude banned)
     if (_bannedFilter != null) {
       filtered = filtered
           .where((e) => _bannedOf(e) == _bannedFilter)
           .toList();
+    }
+
+    // Active / Inactive: only meaningful when we're not showing banned records.
+    // A banned species is never counted as Active.
+    if (_activeFilter != null) {
+      filtered = filtered.where((e) {
+        final active = _activeOf(e);
+        final banned = _bannedOf(e);
+        if (_activeFilter == true) {
+          return active && !banned;   // active AND not banned
+        } else {
+          return !active && !banned;  // inactive AND not banned
+        }
+      }).toList();
     }
 
     // Search
@@ -158,13 +165,22 @@ class _SpeciesMastersScreenState extends State<SpeciesMastersScreen> {
 
   // ── Summary counts derived from the FULL master list ────
 
+  // Total = every species we fetched, regardless of flags.
   int get _totalCount => _allItems.length;
 
-  int get _activeCount =>
-      _allItems.where(_activeOf).length;
-
+  // Banned: banned flag is on (active flag is ignored here — banned wins).
   int get _bannedCount =>
       _allItems.where(_bannedOf).length;
+
+  // Active: active AND not banned, so the buckets don't overlap.
+  int get _activeCount => _allItems
+      .where((e) => _activeOf(e) && !_bannedOf(e))
+      .length;
+
+  // Inactive/Other: not banned and not active. Total = Active + Banned + Other.
+  int get _otherCount => _allItems
+      .where((e) => !_activeOf(e) && !_bannedOf(e))
+      .length;
 
   @override
   Widget build(BuildContext context) {
@@ -211,39 +227,43 @@ class _SpeciesMastersScreenState extends State<SpeciesMastersScreen> {
     );
   }
 
-  // ── Summary cards (Total / Active / Banned) ─────────────
+  // ── Summary cards (Total / Active / Banned / Inactive) ─────────────
   Widget _summaryRow() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-      child: Row(
-        children: [
-          Expanded(
-            child: _summaryCard(
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            _summaryCard(
               label: 'Total',
               value: _totalCount,
               icon: Icons.list_alt_rounded,
               color: Colors.indigo,
             ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: _summaryCard(
+            const SizedBox(width: 10),
+            _summaryCard(
               label: 'Active',
               value: _activeCount,
               icon: Icons.check_circle_rounded,
               color: _success,
             ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: _summaryCard(
+            const SizedBox(width: 10),
+            _summaryCard(
               label: 'Banned',
               value: _bannedCount,
               icon: Icons.block_rounded,
               color: _danger,
             ),
-          ),
-        ],
+            const SizedBox(width: 10),
+            _summaryCard(
+              label: 'Inactive',
+              value: _otherCount,
+              icon: Icons.pause_circle_rounded,
+              color: _warning,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -255,6 +275,7 @@ class _SpeciesMastersScreenState extends State<SpeciesMastersScreen> {
     required Color color,
   }) {
     return Container(
+      constraints: const BoxConstraints(minWidth: 96),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -405,57 +426,52 @@ class _SpeciesMastersScreenState extends State<SpeciesMastersScreen> {
     required VoidCallback onTap,
     Color color = _primary,
   }) {
-    return Material(
-      color: selected ? color.withOpacity(0.15) : Colors.white,
-      borderRadius: BorderRadius.circular(20),
-      child: InkWell(
+    return FilterChip(
+      label: Text(label),
+      selected: selected,
+      onSelected: (_) => onTap(),
+      selectedColor: color.withOpacity(0.2),
+      checkmarkColor: color,
+      labelStyle: TextStyle(
+        color: selected ? color : _textDark,
+        fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+        fontSize: 12,
+      ),
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: selected ? color : _divider,
-              width: selected ? 1.5 : 1,
-            ),
-          ),
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: selected ? color : _textDark,
-              letterSpacing: -0.1,
-            ),
-          ),
+        side: BorderSide(
+          color: selected ? color : _divider,
+          width: selected ? 1.5 : 1,
         ),
       ),
     );
   }
 
-  // ── Body ─────────────────────────────────────────────────
+  // ── Body ────────────────────────────────────────────────
   Widget _body() {
     if (_loading) {
       return const Center(child: CircularProgressIndicator());
     }
+
     if (_error != null) {
-      return ListView(
-        children: [
-          const SizedBox(height: 60),
-          const Icon(Icons.error_outline, size: 48, color: Colors.red),
-          const SizedBox(height: 12),
-          Center(child: Text(_error!, textAlign: TextAlign.center)),
-          const SizedBox(height: 12),
-          Center(
-            child: ElevatedButton(
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.error_outline, size: 48, color: Colors.red),
+            const SizedBox(height: 8),
+            Text(_error!, textAlign: TextAlign.center),
+            const SizedBox(height: 12),
+            ElevatedButton(
               onPressed: _load,
               child: const Text('Retry'),
             ),
-          ),
-        ],
+          ],
+        ),
       );
     }
+
     if (_items.isEmpty) {
       return const Center(
         child: Text(
@@ -466,25 +482,23 @@ class _SpeciesMastersScreenState extends State<SpeciesMastersScreen> {
     }
 
     return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
       itemCount: _items.length,
       separatorBuilder: (_, __) => const SizedBox(height: 8),
       itemBuilder: (_, i) => _speciesTile(_items[i]),
     );
   }
 
-  Widget _speciesTile(Map<String, dynamic> s) {
-    final name = s['fish_name']?.toString() ?? '—';
-    final id = s['species_id'] ?? '—';
-    final isBanned = _bannedOf(s);
-    final isActive = _activeOf(s);
-
-    final Color accent = isBanned
-        ? _danger
-        : (!isActive ? _warning : _success);
+  Widget _speciesTile(Map<String, dynamic> item) {
+    final name = (item['fish_name'] ?? 'Unknown Species').toString();
+    final scientific = (item['scientific_name'] ?? '').toString();
+    final malayalam = (item['malayalam_name'] ?? '').toString();
+    final active = _activeOf(item);
+    final banned = _bannedOf(item);
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
@@ -493,21 +507,16 @@ class _SpeciesMastersScreenState extends State<SpeciesMastersScreen> {
       child: Row(
         children: [
           Container(
-            height: 42,
-            width: 42,
+            height: 38,
+            width: 38,
             decoration: BoxDecoration(
-              color: accent.withOpacity(0.12),
-              borderRadius: BorderRadius.circular(11),
+              color: _primary.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(10),
             ),
-            child: Center(
-              child: Text(
-                '$id',
-                style: TextStyle(
-                  color: accent,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 14,
-                ),
-              ),
+            child: const Icon(
+              Icons.phishing_rounded,
+              size: 20,
+              color: _primary,
             ),
           ),
           const SizedBox(width: 12),
@@ -515,41 +524,60 @@ class _SpeciesMastersScreenState extends State<SpeciesMastersScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  name,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: _textDark,
-                    letterSpacing: -0.1,
-                    height: 1.15,
+                Title(
+                  color: _textDark,
+                  child: Text(
+                    name,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: _textDark,
+                    ),
                   ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 4,
-                  children: [
-                    _statusChip(
-                      label: isActive ? 'Active' : 'Inactive',
-                      color: isActive ? _success : _warning,
-                      icon: isActive
-                          ? Icons.check_circle_rounded
-                          : Icons.pause_circle_rounded,
+                if (scientific.isNotEmpty || malayalam.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    [scientific, malayalam]
+                        .where((s) => s.isNotEmpty)
+                        .join(' · '),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Colors.black54,
                     ),
-                    _statusChip(
-                      label: isBanned ? 'Banned' : 'Allowed',
-                      color: isBanned ? _danger : _primary,
-                      icon: isBanned
-                          ? Icons.block_rounded
-                          : Icons.verified_rounded,
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ],
             ),
+          ),
+          const SizedBox(width: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: [
+              // When the "Banned only" filter is active, the Active/Inactive
+              // chip is redundant (and contradictory). Hide it.
+              if (_bannedFilter != true)
+                _statusChip(
+                  label: active ? 'Active' : 'Inactive',
+                  color: active ? _success : _warning,
+                  icon: active
+                      ? Icons.check_circle_rounded
+                      : Icons.pause_circle_rounded,
+                ),
+
+              // Show the Banned/Allowed chip EXCEPT when filtering
+              // "Not banned" — in that case every record is Allowed, so the
+              // tag adds no information. Keep it for "Banned only" and "All".
+              if (_bannedFilter != false)
+                _statusChip(
+                  label: banned ? 'Banned' : 'Allowed',
+                  color: banned ? _danger : _primary,
+                  icon: banned
+                      ? Icons.block_rounded
+                      : Icons.verified_rounded,
+                ),
+            ],
           ),
         ],
       ),
@@ -564,21 +592,20 @@ class _SpeciesMastersScreenState extends State<SpeciesMastersScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.10),
-        borderRadius: BorderRadius.circular(8),
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(6),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 11, color: color),
+          Icon(icon, size: 12, color: color),
           const SizedBox(width: 4),
           Text(
             label,
             style: TextStyle(
-              color: color,
-              fontSize: 10.5,
+              fontSize: 10,
               fontWeight: FontWeight.w700,
-              letterSpacing: 0.1,
+              color: color,
             ),
           ),
         ],

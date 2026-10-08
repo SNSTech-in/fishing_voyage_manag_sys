@@ -1,6 +1,8 @@
 // lib/screens/boat_owner/boat_selection_screen.dart
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
 import 'package:fishing_voyage_manag_sys/database/database_helper.dart';
 import 'package:fishing_voyage_manag_sys/services/api_services/boat_owners_api_service.dart';
 import 'package:fishing_voyage_manag_sys/screens/depart_login_selection.dart';
@@ -295,6 +297,9 @@ class _BoatSelectionScreenState extends State<BoatSelectionScreen> {
                         controller: boatRegNoController,
                         icon: Icons.assignment_rounded,
                         isRequired: true,
+                        inputFormatters: [RegNoFormatter()],
+                        validator: _validateRegNo,
+                        onChanged: () => setStateDialog(() {}),
                       ),
                       const SizedBox(height: 12),
                       _buildAddBoatField(
@@ -303,6 +308,9 @@ class _BoatSelectionScreenState extends State<BoatSelectionScreen> {
                         controller: boatNameController,
                         icon: Icons.directions_boat_rounded,
                         isRequired: true,
+                        inputFormatters: [BoatNameFormatter()],
+                        validator: _validateBoatName,
+                        onChanged: () => setStateDialog(() {}),
                       ),
                       const SizedBox(height: 12),
                       _buildAddBoatField(
@@ -311,6 +319,9 @@ class _BoatSelectionScreenState extends State<BoatSelectionScreen> {
                         controller: licenceIdController,
                         icon: Icons.document_scanner_rounded,
                         isRequired: true,
+                        inputFormatters: [LicenceIdFormatter()],
+                        validator: _validateLicenceId,
+                        onChanged: () => setStateDialog(() {}),
                       ),
                       const SizedBox(height: 12),
                       _buildAddBoatField(
@@ -320,7 +331,9 @@ class _BoatSelectionScreenState extends State<BoatSelectionScreen> {
                         icon: Icons.calendar_today_rounded,
                         isRequired: true,
                         readOnly: true,
+                        validator: _validateDate,
                         onTap: () => selectDate(licenceIssueDateController),
+                        onChanged: () => setStateDialog(() {}),
                       ),
                       const SizedBox(height: 12),
                       _buildAddBoatField(
@@ -330,7 +343,9 @@ class _BoatSelectionScreenState extends State<BoatSelectionScreen> {
                         icon: Icons.calendar_today_rounded,
                         isRequired: true,
                         readOnly: true,
+                        validator: _validateDate,
                         onTap: () => selectDate(licenceValidUptoController),
+                        onChanged: () => setStateDialog(() {}),
                       ),
                       const SizedBox(height: 10),
                       Container(
@@ -394,6 +409,15 @@ class _BoatSelectionScreenState extends State<BoatSelectionScreen> {
                       return;
                     }
 
+                    final issue = DateTime.tryParse(licenceIssueDateController.text.trim());
+                    final valid = DateTime.tryParse(licenceValidUptoController.text.trim());
+                    if (issue == null) { _showError('Invalid issue date'); return; }
+                    if (valid == null) { _showError('Invalid valid-upto date'); return; }
+                    if (valid.isBefore(issue)) {
+                      _showError('Valid Upto must be after Issue Date');
+                      return;
+                    }
+
                     setStateDialog(() {
                       isLoadingLocal = true;
                     });
@@ -452,6 +476,33 @@ class _BoatSelectionScreenState extends State<BoatSelectionScreen> {
   }
 
   // ============================================================
+  // VALIDATORS
+  // ============================================================
+
+  String? _validateRegNo(String v) {
+    if (v.trim().isEmpty) return 'Enter registration number';
+    if (v.trim().length < 3) return 'Minimum 3 characters';
+    return null;
+  }
+
+  String? _validateBoatName(String v) {
+    if (v.trim().isEmpty) return 'Enter boat name';
+    if (v.trim().length < 2) return 'Minimum 2 characters';
+    return null;
+  }
+
+  String? _validateLicenceId(String v) {
+    if (v.trim().isEmpty) return 'Enter license ID';
+    if (v.trim().length < 3) return 'Minimum 3 characters';
+    return null;
+  }
+
+  String? _validateDate(String v) {
+    if (v.trim().isEmpty) return 'Select date';
+    return null;
+  }
+
+  // ============================================================
   // ADD BOAT FIELD
   // ============================================================
 
@@ -463,62 +514,65 @@ class _BoatSelectionScreenState extends State<BoatSelectionScreen> {
     bool isRequired = false,
     bool readOnly = false,
     VoidCallback? onTap,
+    List<TextInputFormatter>? inputFormatters,
+    String? Function(String)? validator,
+    required VoidCallback onChanged,
   }) {
+    final error = validator != null ? validator(controller.text) : null;
+    final showValidation = controller.text.isNotEmpty;
+    final isValid = showValidation && error == null;
+    final showError = showValidation && error != null;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
-            Text(
-              label,
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: darkBlue,
+            Text(label, style: const TextStyle(
+              fontSize: 13, fontWeight: FontWeight.w600, color: darkBlue)),
+            if (isRequired)
+              const Text(' *', style: TextStyle(
+                color: Colors.red, fontWeight: FontWeight.w600)),
+            const Spacer(),
+            if (showValidation && validator != null)
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 180),
+                child: isValid
+                    ? const Icon(Icons.check_circle,
+                        key: ValueKey('ok'),
+                        color: Color(0xFF16A34A), size: 18)
+                    : const Icon(Icons.cancel,
+                        key: ValueKey('no'),
+                        color: Color(0xFFDC2626), size: 18),
               ),
-            ),
-            if (isRequired) ...[
-              const SizedBox(width: 4),
-              const Text(
-                '*',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.red,
-                ),
-              ),
-            ],
           ],
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 5),
         Container(
           decoration: BoxDecoration(
             border: Border.all(
-              color: Colors.grey[300]!,
+              color: showError ? Colors.red : Colors.grey.shade300,
+              width: showError ? 1.5 : 1,
             ),
             borderRadius: BorderRadius.circular(8),
           ),
           child: Row(
             children: [
               const SizedBox(width: 10),
-              Icon(
-                icon,
-                size: 18,
-                color: Colors.grey[600],
-              ),
+              Icon(icon, size: 18,
+                  color: showError ? Colors.red : Colors.grey[600]),
               const SizedBox(width: 10),
               Expanded(
                 child: TextField(
                   controller: controller,
                   readOnly: readOnly,
                   onTap: onTap,
+                  inputFormatters: inputFormatters,
+                  onChanged: (_) => onChanged(),
                   style: const TextStyle(fontSize: 14),
                   decoration: InputDecoration(
                     hintText: hint,
-                    hintStyle: TextStyle(
-                      fontSize: 13,
-                      color: Colors.grey[400],
-                    ),
+                    hintStyle: TextStyle(fontSize: 13, color: Colors.grey[400]),
                     border: InputBorder.none,
                     contentPadding: const EdgeInsets.symmetric(vertical: 10),
                   ),
@@ -527,11 +581,8 @@ class _BoatSelectionScreenState extends State<BoatSelectionScreen> {
               if (readOnly)
                 IconButton(
                   onPressed: onTap,
-                  icon: const Icon(
-                    Icons.calendar_month_rounded,
-                    size: 18,
-                    color: primaryBlue,
-                  ),
+                  icon: const Icon(Icons.calendar_month_rounded,
+                      size: 18, color: primaryBlue),
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
                 ),
@@ -539,6 +590,18 @@ class _BoatSelectionScreenState extends State<BoatSelectionScreen> {
             ],
           ),
         ),
+        if (showError) ...[
+          const SizedBox(height: 4),
+          Padding(
+            padding: const EdgeInsets.only(left: 4),
+            child: Text(error!,
+                style: const TextStyle(
+                  color: Color(0xFFDC2626),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                )),
+          ),
+        ],
       ],
     );
   }
@@ -1938,6 +2001,51 @@ class _PulsingDotState extends State<_PulsingDot>
           shape: BoxShape.circle,
         ),
       ),
+    );
+  }
+}
+
+class RegNoFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final cleaned = newValue.text.replaceAll(RegExp(r'[^a-zA-Z0-9\-]'), '');
+    if (cleaned == newValue.text) return newValue;
+    return newValue.copyWith(
+      text: cleaned,
+      selection: TextSelection.collapsed(offset: cleaned.length),
+    );
+  }
+}
+
+class BoatNameFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final cleaned = newValue.text.replaceAll(RegExp(r'[^a-zA-Z\s]'), '');
+    if (cleaned == newValue.text) return newValue;
+    return newValue.copyWith(
+      text: cleaned,
+      selection: TextSelection.collapsed(offset: cleaned.length),
+    );
+  }
+}
+
+class LicenceIdFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final cleaned = newValue.text.replaceAll(RegExp(r'[^a-zA-Z0-9\-]'), '');
+    if (cleaned == newValue.text) return newValue;
+    return newValue.copyWith(
+      text: cleaned,
+      selection: TextSelection.collapsed(offset: cleaned.length),
     );
   }
 }

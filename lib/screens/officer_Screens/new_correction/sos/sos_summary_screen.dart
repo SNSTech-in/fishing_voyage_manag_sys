@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../../../services/api_services/officer_api_service.dart';
@@ -13,6 +14,7 @@ class SosSummaryScreen extends StatefulWidget {
 class _SosSummaryScreenState extends State<SosSummaryScreen> {
   final OfficersApiService _api = OfficersApiService();
   final _searchCtrl = TextEditingController();
+  Timer? _searchDebounce;
 
   // Palette
   static const Color _primary = Color(0xFF1257C7);
@@ -27,6 +29,7 @@ class _SosSummaryScreenState extends State<SosSummaryScreen> {
   static const Color _info = Color(0xFF0891B2);
 
   List<Map<String, dynamic>> _items = [];
+  List<Map<String, dynamic>> _filteredItems = [];
   bool _loading = true;
   String? _error;
 
@@ -45,8 +48,92 @@ class _SosSummaryScreenState extends State<SosSummaryScreen> {
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _searchCtrl.dispose();
     super.dispose();
+  }
+
+  int _intValue(dynamic v) {
+    if (v == null) return 0;
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v.toString()) ?? 0;
+  }
+
+  void _onSearchChanged(String value) {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 300), () {
+      _applyLocalSearch();
+    });
+  }
+
+  void _clearSearch() {
+    _searchDebounce?.cancel();
+    _searchCtrl.clear();
+    _applyLocalSearch();
+    _load(reset: true);
+  }
+
+  /// Filters the already-fetched list on the client so unrelated
+  /// records never show even if the backend ignores the `search` param.
+  void _applyLocalSearch() {
+    final q = _searchCtrl.text.trim().toLowerCase();
+
+    Iterable<Map<String, dynamic>> result = _items;
+
+    // Filter by dropdown status
+    if (_statusFilter != null && _statusFilter!.isNotEmpty) {
+      final want = _statusFilter!.toUpperCase();
+      result = result.where((item) {
+        final s = (item['sos_status'] ?? item['status'] ?? '')
+            .toString()
+            .toUpperCase();
+        return s == want;
+      });
+    }
+
+    // Filter by dropdown severity
+    if (_severityFilter != null && _severityFilter!.isNotEmpty) {
+      final want = _severityFilter!.toUpperCase();
+      result = result.where((item) {
+        final s = (item['severity'] ?? '').toString().toUpperCase();
+        return s == want;
+      });
+    }
+
+    // Filter by free-text search
+    if (q.isNotEmpty) {
+      result = result.where((item) {
+        final haystack = [
+          item['sos_ref_no'],
+          item['reference_no'],
+          item['boat_name'],
+          item['boat_reg_no'],
+          item['boat_number'],
+          item['crew_name'],
+          item['raised_by_name'],
+          item['reported_by_name'],
+          item['owner_name'],
+          item['acknowledged_by_name'],
+          item['description'],
+          item['remarks'],
+          item['sos_type'],
+          item['severity'],
+          item['sos_status'],
+          item['status'],
+          item['latitude'],
+          item['longitude'],
+        ]
+            .where((e) => e != null)
+            .map((e) => e.toString().toLowerCase())
+            .join(' ');
+        return haystack.contains(q);
+      });
+    }
+
+    setState(() {
+      _filteredItems = result.toList();
+    });
   }
 
   Future<void> _load({bool reset = false}) async {
@@ -74,6 +161,8 @@ class _SosSummaryScreenState extends State<SosSummaryScreen> {
         _total = meta['total'] ?? list.length;
         _loading = false;
       });
+      // Re-apply the current search term to the fresh list.
+      _applyLocalSearch();
     } else {
       setState(() {
         _error = res['message']?.toString() ?? 'Failed to load SOS';
@@ -107,7 +196,10 @@ class _SosSummaryScreenState extends State<SosSummaryScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh_rounded),
-            onPressed: () => _load(reset: true),
+            onPressed: () {
+              _searchDebounce?.cancel();
+              _load(reset: true);
+            },
           ),
         ],
       ),
@@ -132,10 +224,21 @@ class _SosSummaryScreenState extends State<SosSummaryScreen> {
           TextField(
             controller: _searchCtrl,
             textInputAction: TextInputAction.search,
-            onSubmitted: (_) => _load(reset: true),
+            onChanged: _onSearchChanged,
+            onSubmitted: (_) {
+              _searchDebounce?.cancel();
+              _applyLocalSearch();
+              _load(reset: true);
+            },
             decoration: InputDecoration(
               hintText: 'Search SOS (boat, crew, description)...',
               prefixIcon: const Icon(Icons.search, size: 20),
+              suffixIcon: _searchCtrl.text.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.close_rounded, size: 18),
+                      onPressed: _clearSearch,
+                    )
+                  : null,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
               ),
@@ -162,8 +265,9 @@ class _SosSummaryScreenState extends State<SosSummaryScreen> {
                         value: 'RESOLVED', child: Text('Resolved')),
                   ],
                   onChanged: (v) {
-                    _statusFilter = v;
-                    _load(reset: true);
+                    setState(() => _statusFilter = v);
+                    _applyLocalSearch();          // filter immediately, no waiting
+                    _load(reset: true);           // then refresh from API
                   },
                 ),
               ),
@@ -183,8 +287,9 @@ class _SosSummaryScreenState extends State<SosSummaryScreen> {
                     DropdownMenuItem(value: 'LOW', child: Text('Low')),
                   ],
                   onChanged: (v) {
-                    _severityFilter = v;
-                    _load(reset: true);
+                    setState(() => _severityFilter = v);
+                    _applyLocalSearch();          // filter immediately
+                    _load(reset: true);           // then refresh from API
                   },
                 ),
               ),
@@ -215,8 +320,31 @@ class _SosSummaryScreenState extends State<SosSummaryScreen> {
         ),
       );
     }
-    if (_items.isEmpty) {
-      return const Center(child: Text('No SOS records found.'));
+    if (_filteredItems.isEmpty) {
+      final hasSearch = _searchCtrl.text.trim().isNotEmpty;
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                hasSearch ? Icons.search_off_rounded : Icons.inbox_rounded,
+                size: 48,
+                color: Colors.black26,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                hasSearch
+                    ? 'No SOS records match your search.'
+                    : 'No SOS records found.',
+                style: const TextStyle(color: Colors.black54),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      );
     }
 
     return RefreshIndicator(
@@ -225,9 +353,9 @@ class _SosSummaryScreenState extends State<SosSummaryScreen> {
       child: ListView.separated(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
-        itemCount: _items.length,
+        itemCount: _filteredItems.length,
         separatorBuilder: (_, __) => const SizedBox(height: 8),
-        itemBuilder: (_, i) => _sosTile(_items[i]),
+        itemBuilder: (_, i) => _sosTile(_filteredItems[i]),
       ),
     );
   }
@@ -235,379 +363,307 @@ class _SosSummaryScreenState extends State<SosSummaryScreen> {
   // ── SOS Tile (card with View Details button) ────────────
   Widget _sosTile(Map<String, dynamic> item) {
     final severity =
-    (item['severity'] ?? 'N/A').toString().toUpperCase();
+        (item['severity'] ?? 'N/A').toString().toUpperCase();
     final status =
-    (item['sos_status'] ?? item['status'] ?? 'N/A')
-        .toString()
-        .toUpperCase();
+        (item['status'] ?? item['sos_status'] ?? 'N/A')
+            .toString()
+            .toUpperCase();
     final boat =
-    (item['boat_reg_no'] ?? item['boat_name'] ?? 'Unknown Boat')
-        .toString();
-    final boatName = (item['boat_name'] ?? '').toString();
+        (item['boat_reg_no'] ?? item['boat_name'] ?? 'Unknown Boat')
+            .toString();
     final ref = (item['sos_ref_no'] ?? '').toString();
-    final datetime = (item['sos_datetime'] ?? item['created_at'] ?? '—')
-        .toString();
+    final datetime =
+        (item['sos_datetime'] ?? item['created_at'] ?? '—').toString();
     final desc =
-    (item['description'] ?? item['remarks'] ?? '').toString();
+        (item['description'] ?? item['remarks'] ?? '').toString();
     final raisedBy = (item['raised_by_name'] ?? '').toString();
     final refNo = (item['reference_no'] ?? '').toString();
 
     final sevColor = _severityColor(severity);
     final statColor = _statusColor(status);
 
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        onTap: () => _openDetails(item),
-        child: Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: _divider),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+        border: Border.all(color: _divider),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── HEADER ──
+          Row(
             children: [
-              // ── HEADER ──
-              Row(
-                children: [
-                  Container(
-                    height: 34,
-                    width: 34,
-                    decoration: BoxDecoration(
-                      color: sevColor.withOpacity(0.12),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Icon(
-                      Icons.sos_rounded,
-                      size: 18,
-                      color: sevColor,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          ref.isEmpty ? 'SOS Alert' : ref,
-                          style: const TextStyle(
-                            fontSize: 13.5,
-                            fontWeight: FontWeight.w800,
-                            color: _textDark,
-                            letterSpacing: -0.1,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 2),
-                        Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: sevColor.withOpacity(0.12),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text(
-                                severity,
-                                style: TextStyle(
-                                  color: sevColor,
-                                  fontSize: 9.5,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: 0.3,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: statColor.withOpacity(0.12),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text(
-                                status,
-                                style: TextStyle(
-                                  color: statColor,
-                                  fontSize: 9.5,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: 0.3,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+              Container(
+                height: 34,
+                width: 34,
+                decoration: BoxDecoration(
+                  color: sevColor.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  Icons.sos_rounded,
+                  size: 18,
+                  color: sevColor,
+                ),
               ),
-
-              const SizedBox(height: 8),
-
-              // ── BOAT ──
-              Row(
-                children: [
-                  const Icon(Icons.directions_boat_rounded,
-                      size: 14, color: _primary),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      boatName.isNotEmpty
-                          ? '$boatName · $boat'
-                          : boat,
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      ref.isEmpty ? 'SOS Alert' : ref,
                       style: const TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w600,
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w800,
                         color: _textDark,
+                        letterSpacing: -0.1,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                  ),
-                  if (raisedBy.isNotEmpty)
-                    Text(
-                      'by $raisedBy',
-                      style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: _textLight,
-                      ),
-                    ),
-                ],
-              ),
-
-              const SizedBox(height: 6),
-
-              // ── DATETIME ──
-              Row(
-                children: [
-                  const Icon(Icons.schedule_rounded,
-                      size: 13, color: _textLight),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      _prettyDate(datetime),
-                      style: const TextStyle(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w600,
-                        color: _textMid,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-
-              // ── REFERENCE ──
-              if (refNo.isNotEmpty) ...[
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    const Icon(Icons.tag_rounded,
-                        size: 13, color: _textLight),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        refNo,
+                    if (refNo.isNotEmpty)
+                      Text(
+                        'Voyage: $refNo',
                         style: const TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
-                          color: _primary,
+                          color: _textLight,
                         ),
                       ),
-                    ),
                   ],
                 ),
-              ],
-
-              // ── DESCRIPTION ──
-              if (desc.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: _bg,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.notes_rounded,
-                          size: 13, color: _textMid),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          desc,
-                          style: const TextStyle(
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w500,
-                            color: _textMid,
-                          ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: statColor.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(8),
                 ),
-              ],
-
-              const SizedBox(height: 8),
-              const Divider(height: 1, color: _divider),
-              const SizedBox(height: 4),
-
-              // ── VIEW DETAILS ──
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton.icon(
-                  onPressed: () => _openDetails(item),
-                  style: TextButton.styleFrom(
-                    foregroundColor: _primary,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 4),
-                    minimumSize: const Size(0, 0),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  icon: const Icon(Icons.visibility_rounded, size: 15),
-                  label: const Text(
-                    'View Details',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                    ),
+                child: Text(
+                  status,
+                  style: TextStyle(
+                    color: statColor,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.3,
                   ),
                 ),
               ),
             ],
           ),
-        ),
+          const SizedBox(height: 8),
+
+          // ── BOAT & TIME ──
+          Row(
+            children: [
+              const Icon(Icons.directions_boat_rounded,
+                  size: 14, color: _primary),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  boat,
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    color: _textDark,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Text(
+                _prettyDate(datetime),
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: _textLight,
+                ),
+              ),
+            ],
+          ),
+
+          if (desc.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              desc,
+              style: const TextStyle(
+                fontSize: 12,
+                color: _textMid,
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+
+          const SizedBox(height: 10),
+          const Divider(height: 1, color: _divider),
+          const SizedBox(height: 8),
+
+          // ── FOOTER ──
+          Row(
+            children: [
+              if (raisedBy.isNotEmpty)
+                Row(
+                  children: [
+                    const Icon(Icons.person_outline_rounded,
+                        size: 13, color: _textLight),
+                    const SizedBox(width: 4),
+                    Text(
+                      raisedBy,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: _textMid,
+                      ),
+                    ),
+                  ],
+                ),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: sevColor.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(
+                      color: sevColor.withOpacity(0.2)),
+                ),
+                child: Text(
+                  '$severity SEVERITY',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    color: sevColor,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+
+              // ── SINGLE ENTRY POINT TO DETAILS ──
+              TextButton.icon(
+                onPressed: () => _openDetails(item),
+                style: TextButton.styleFrom(
+                  foregroundColor: _primary,
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 8, vertical: 2),
+                  minimumSize: const Size(0, 0),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                icon: const Icon(Icons.visibility_rounded, size: 14),
+                label: const Text(
+                  'View Details',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
 
-  Color _severityColor(String s) {
-    switch (s) {
+  // ── Pager ───────────────────────────────────────────────
+  Widget _pager() {
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            'Page $_page',
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: _textMid,
+            ),
+          ),
+          Row(
+            children: [
+              OutlinedButton(
+                onPressed: _page > 1
+                    ? () {
+                  setState(() => _page--);
+                  _load();
+                }
+                    : null,
+                child: const Text('Prev'),
+              ),
+              const SizedBox(width: 12),
+              OutlinedButton(
+                onPressed: (_page * _limit) < _total
+                    ? () {
+                  setState(() => _page++);
+                  _load();
+                }
+                    : null,
+                child: const Text('Next'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Color _severityColor(String sev) {
+    switch (sev) {
       case 'HIGH':
-      case 'CRITICAL':
         return _danger;
       case 'MEDIUM':
         return _warning;
       case 'LOW':
         return _success;
       default:
-        return _textMid;
+        return _primary;
     }
   }
 
-  Color _statusColor(String s) {
-    switch (s) {
-      case 'RESOLVED':
-      case 'CLOSED':
-        return _success;
+  Color _statusColor(String status) {
+    switch (status) {
       case 'OPEN':
-      case 'PENDING':
-        return _warning;
+        return _danger;
+      case 'RESOLVED':
+        return _success;
       default:
-        return _textMid;
+        return _primary;
     }
   }
 
-  String _prettyDate(String iso) {
-    if (iso.isEmpty || iso == '—') return '—';
+  String _prettyDate(String? iso) {
+    if (iso == null || iso.isEmpty) return '—';
     try {
-      final dt = DateTime.parse(iso.replaceFirst(' ', 'T')).toLocal();
+      final dt = DateTime.parse(iso).toLocal();
       const months = [
         'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
         'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
       ];
-      final d = dt.day.toString().padLeft(2, '0');
-      final m = months[dt.month - 1];
-      final hh = dt.hour.toString().padLeft(2, '0');
-      final mm = dt.minute.toString().padLeft(2, '0');
-      return '$d $m ${dt.year} · $hh:$mm';
+      final day = dt.day.toString().padLeft(2, '0');
+      final month = months[dt.month - 1];
+      final hour = dt.hour.toString().padLeft(2, '0');
+      final minute = dt.minute.toString().padLeft(2, '0');
+      return '$day $month · $hour:$minute';
     } catch (_) {
       return iso.length >= 16 ? iso.substring(0, 16) : iso;
     }
   }
 
-  // ═══════════════════════════════════════════════════════════
-  // OPEN SOS DETAILS SHEET  (fetches /sos/{id})
-  // ═══════════════════════════════════════════════════════════
   void _openDetails(Map<String, dynamic> item) {
-    final sosId = _intValue(item['sos_id']);
-    if (sosId == 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Invalid SOS ID'),
-          backgroundColor: _danger,
-        ),
-      );
-      return;
-    }
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => DraggableScrollableSheet(
-        expand: false,
-        initialChildSize: 0.78,
-        minChildSize: 0.4,
-        maxChildSize: 0.95,
-        builder: (_, ctrl) => SosDetailsSheet(
+    final sosId = _intValue(item['sos_id'] ?? item['id']);
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SosDetailsSheet(
           sosId: sosId,
           initial: item,
-          controller: ctrl,
         ),
-      ),
-    );
-  }
-
-  int _intValue(dynamic v) {
-    if (v == null) return 0;
-    if (v is int) return v;
-    if (v is num) return v.toInt();
-    return int.tryParse(v.toString()) ?? 0;
-  }
-
-  // ── Pager ───────────────────────────────────────────────
-  Widget _pager() {
-    final maxPage = (_total / _limit).ceil();
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      color: Colors.grey.shade100,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text('Page $_page / $maxPage  (total $_total)'),
-          Row(
-            children: [
-              IconButton(
-                onPressed: _page > 1
-                    ? () {
-                  _page--;
-                  _load();
-                }
-                    : null,
-                icon: const Icon(Icons.chevron_left),
-              ),
-              IconButton(
-                onPressed: _page < maxPage
-                    ? () {
-                  _page++;
-                  _load();
-                }
-                    : null,
-                icon: const Icon(Icons.chevron_right),
-              ),
-            ],
-          ),
-        ],
       ),
     );
   }
